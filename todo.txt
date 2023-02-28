@@ -1,0 +1,9 @@
+Rapidement
+
+Clarifier les datetime avec la base de données actuellement yfinance prend le datetime automatiquement de france paris donc history(14h-15h) donne les positions americaine de 10h-11h -4h
+
+LOINTAIN
+Sauver un modèle et l'entrainer
+de nouveau sur des courtes sequences pour le mettre à jour
+
+Utiliser les commandes vocales google pour recevoir la  situation

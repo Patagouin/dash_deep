@@ -1,0 +1,2 @@
+# To generate me: type in cmd line : pip freeze > requirements.txt
+Flask~=1.1

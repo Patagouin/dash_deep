@@ -1,0 +1,37 @@
+Observation:
+Fort lien:
+période novembre-décembre:
+En volume:
+WLN.PA et STM.PA 0.64
+AKA.PA et ETL.PA 0.57
+DSY.PA et CAP.PA 0.53
+
+Evolution prix:
+SOP.PA et ATO.PA 0.97
+AKA.PA et BAR.BR 0.93
+AKA.PA et ATO.PA 0.93
+AKA.PA et ATO.PA 0.92
+MELE.BR et SOP.PA 0.92
+MELE.BR et SOI.PA 0.92
+
+Conclusion:
+Forte correlations entre les mouvements de prix des actions de meme secteur
+Quelques fortes correlation négative également.
+Plus faible correlation entre les volumes des actions
+Pas de lien entre forte correlation prix actions et volumes
+
+Forte correlation après shift entre 0 et 1 jour (et meme 1 semaine)
+ProphetFB est pas adapte pour des predictions a moins d un jour
+mais est utile pour en retirer des tendances
+Avec ProphetFB, il semblerait qu'il y ai une petite hausse a chaque fin de semaine
+
+Observation:
+Les correlations entre les jours d'une meme action action montrent des périodicité d'1 semaine tres marqué pour le secteur Technology
+contrairement à d'autres secteurs (industry, healthcare...)
+Tres marqué en fin d'annee 2020
+Ne l'a pas été pendant les mois de fin decembre, janvier, fevrier
+
+Conclusion:
+Important: Les cours dans le domaine de la technology semble garder un rythme/direction durant la semaine
+
+
