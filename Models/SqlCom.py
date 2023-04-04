@@ -162,19 +162,19 @@ class SqlCom:
         return date
 
 
-    def getQuots(self, share, dateBegin, dateEnd):
+    def getQuots(self, shareObj, dateBegin, dateEnd):
         dataFrame = pd.DataFrame()
         try:
             select_query = f''' SELECT * FROM "sharesInfos" LIMIT 0'''
             self.cursor.execute(select_query)
             self.connection.commit()
             columns = [desc[0] for desc in self.cursor.description]
-            sub_query = f'''SELECT "idShare" FROM "sharesInfos" where "symbol"='{share.symbol}' '''
+            sub_query = f'''SELECT "idShare" FROM "sharesInfos" where "symbol"='{shareObj.symbol}' '''
             select_query =f'''SELECT "time", "openPrice", "highPrice", "lowPrice", "closePrice", "volume", "dividend" FROM "sharesPricesQuots" WHERE "idShare"= ({sub_query}) and "time" >= '{dateBegin}' and "time" < '{dateEnd}' ORDER BY "time" '''
             dataFrame = pd.read_sql(select_query, self.connection, index_col=["time"], parse_dates=["time"], columns=columns)
 
         except (Exception, psycopg2.DatabaseError) as error :
-            print (f"Error while getting quots for {share.symbol}: ", error)
+            print (f"Error while getting quots for {shareObj.symbol}: ", error)
             exit(-1)
         return dataFrame
 
@@ -411,6 +411,7 @@ class SqlCom:
             print (f"Error while saving stats on average records: ", error)
             exit(-1)
 
+    ## LastRecord est aussi compute par la fonction computeNbRecordsAndAvgByDayAndFirstLastRecord
     def computeLastRecord(self, shareObj):
         try:
             data = None
@@ -428,8 +429,109 @@ class SqlCom:
             print (f"Error while saving stat lastRecord: ", error)
             exit(-1)
 
-    def computeAvgMaxRangeByDay(self, shareObj):
-        return 0
+    def get_last_potential_date(self, shareObj):
+        try:
+            select_query = f'''SELECT "date" FROM "sharesPotentials" WHERE "idShare"='{shareObj.idShare}' ORDER BY "date" DESC LIMIT 1'''
+            self.cursor.execute(select_query)
+            self.connection.commit()
+            data = self.cursor.fetchall()
+
+            if data != [] and data is not None:
+                last_date_not_computed = data[0][0]
+            else:
+                last_date_not_computed = self.getFirstDateQuot(shareObj)
+
+            return last_date_not_computed
+
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(f"Error while fetching the last potential date: ", error)
+            exit(-1)
+
+    def get_cotations_data(self, shareObj, start_date, end_date, column):
+        try:
+            select_query = f'''SELECT "{column}", "time" FROM "sharesPricesQuots" WHERE "idShare"='{shareObj.idShare}' AND "time" >= '{start_date}' AND "time" <= '{end_date}' ORDER BY "time" ASC'''
+            self.cursor.execute(select_query)
+            self.connection.commit()
+            data = self.cursor.fetchall()
+
+            if data != [] and data is not None:
+                data_quots = np.array(data)[:, 0]
+                data_quots = data.astype(np.float)
+                nan_indices = np.isnan(data_quots)
+                if np.any(nan_indices):
+                    non_nan_indices = np.flatnonzero(~nan_indices)
+                    # Interpoler les valeurs pour les indices NaN à partir des valeurs voisines
+                    interp_values = np.interp(nan_indices.nonzero()[0], non_nan_indices, data_quots[non_nan_indices])
+                    # Remplacer les valeurs NaN par les valeurs interpolées
+                    data_quots[nan_indices] = interp_values
+                data_time = np.array(data)[:, 1]
+            else:
+                print(f"No data found for idShare '{shareObj.symbol}' ('{shareObj.idShare}') in the specified date range {start_date} and {end_date}")
+                data_quots = np.array([])
+                data_time = np.array([])
+
+            return data_quots, data_time
+
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(f"Error while fetching cotations data: ", error)
+            exit(-1)
+
+    # Créer une requête pour récup' la dernière valeur de mise à jour potential dans sharesPotential
+    # Itérer sur les jours ouvrable ou sur tout les jours (faire attention au timezone)
+    # Mettre à jour la table (chaque colonne = nb action 1,2,3,4,5,7,10,15,20,30,50,75,100 en % seulement si trouvé sinon null)
+        # Plus la valeur du % est elevé pour nb action élevé plus c'est mieux
+        # A voir aussi si possibilité de mettre en évidence une idée de la volatilité (si forte augmentation en ajoutant nb action)
+    def computePotential(self, shareObj):
+        try:
+            data = None
+            lastDateNotComputed = self.get_last_potential_date(shareObj)
+            potential_levels = [30,15,10,7,5,4,3,2,1]
+            # Calculate potential for each business day from lastDateNotComputed
+            date_range = pd.bdate_range(lastDateNotComputed, pd.Timestamp.today())
+            for date in date_range:
+                start_of_day = date.to_pydatetime().replace(hour=0, minute=0, second=0, microsecond=0)
+                end_of_day = start_of_day + datetime.timedelta(days=1, microseconds=-1)
+                # cotations_data = self.getQuots(shareObj, start_of_day, end_of_day)
+                cotations_data, time_data = self.get_cotations_data(shareObj, start_of_day, end_of_day, "openPrice")
+                if (cotations_data.size != 0):
+                    # Calculez le potentiel pour la date actuelle en utilisant getPotential
+                    resultIndex, resultPercent, resultPercentTotal = ut.getPotential(cotations_data, potential_levels)
+                    
+                    # Convertir les index de la liste 2D en valeurs du tableau `time_data` (en string)
+                    #resultTime = [[time_data[range_index[0]].strftime('%H:%M'), time_data[range_index[1]].strftime('%H:%M')] for range_index in potential] for potential in resultIndex]
+                    # Transformation des éléments de time_data en utilisant resultIndex
+                    resultTime = [
+                        [
+                            [time_data[index].strftime('%H:%M') for index in range_index]
+                            for range_index in potential
+                        ]
+                        for potential in resultIndex
+                    ]
+                    insert_query =  f''' INSERT INTO "sharesPotentials"("idShare", "date" '''
+                    for i in potential_levels:
+                        insert_query += f''', "{str(i)}_time", "{str(i)}_percentTotal", "{str(i)}_percent" '''
+                    insert_query += f''')\nVALUES ('{shareObj.idShare}', '{date}' '''
+                    for time, percentTotal, percent in zip(resultTime, resultPercentTotal, resultPercent):
+                        if (time != []):
+                            time_str = '{' + ','.join(['{' + ','.join(row) + '}' for row in time]) + '}'
+                            percent_str = '{' + ','.join(str(x) for x in percent) + '}'
+                            insert_query += f''', '{time_str}', '{percentTotal}',  '{percent_str}' '''
+                        else:
+                            insert_query += f''', NULL, NULL, NULL '''
+                    insert_query += f''')\nON CONFLICT ("idShare", "date") DO UPDATE SET '''
+                    for i, (time, percentTotal, percent) in enumerate(zip(resultTime, resultPercentTotal, resultPercent)):
+                        # pas besoin de tester null vu que Excluded reprend la valeur qu'on a voulu mettre donc null
+                        insert_query += f''' "{str(potential_levels[i])}_time" = EXCLUDED."{str(potential_levels[i])}_time", "{str(potential_levels[i])}_percentTotal" = EXCLUDED."{str(potential_levels[i])}_percentTotal", "{str(potential_levels[i])}_percent" = EXCLUDED."{str(potential_levels[i])}_percent",'''
+                    insert_query = insert_query.rstrip(',')
+               
+                
+                    ## Do nothing  in case on conflict, ON CONFLICT("idShare", "date") DO UPDATE SET "potential"='{potential}' '''
+                    self.cursor.execute(insert_query)
+                    self.connection.commit()
+
+        except(Exception) as error:
+            print (f"Error while computing potential: ", error)
+            exit(-1)
 
     # A revoir
     def discardUpdate(self, shareObj, nbRecordsMinByDay, nbDaysMax=30):

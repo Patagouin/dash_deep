@@ -222,8 +222,8 @@ class Shares:
     def computeAvgMaxRangeByDay(self, shareObj):
         self.__sqlObj.computeAvgMaxRangeByDay(shareObj)
 
-    def computeTotalGainOrLoose(self, shareObj):
-        self.__sqlObj.computeTotalGainOrLoose(shareObj)
+    def computePotential(self, shareObj):
+        self.__sqlObj.computePotential(shareObj)
 
     def computeIsToUpdate(self, shareObj):
         nbRecordsMinByDay = 100

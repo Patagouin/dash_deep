@@ -6,6 +6,7 @@ import yfinance as yf
 import pytz
 import seaborn
 import numpy as np
+from collections import OrderedDict
 
 logType = {"Success":0, "Warning":1, "Error":2}
 
@@ -33,7 +34,7 @@ def logOperation(message, listErrors=[],  nbRowsWritten="ND", isTotal=False, new
     dateNow = datetime.datetime.now()
     dateNowString = dateNow.strftime("%a-%d-%b-%Y_%Hh%Mm%S")
     nameDay = dateNow.strftime('%A')
-    with open(f'{__file__}/../../../data/logFile_{nameDay}.log', 'a+', newline='') as logFile:
+    with open(f'{__file__}/../../data/logFile_{nameDay}.log', 'a+', newline='') as logFile:
         maintainLogSize(logFile)
         str1 = f'{message}' + (f" ({nbRowsWritten}) rows downloaded" if (nbRowsWritten!="ND") else "")
         str1 = str1 + (" in total" if (isTotal) else "")
@@ -376,160 +377,6 @@ def nextMinimumIndexOutsideBound(minRange, iBeg, iEnd):
         i+=1
     return None
 
-# Return: outArray = [indexA, valueA, indexB, valueB, rangeValue] * kRange
-# and percent [float number]
-def getPotential(serie, kRange, sens='up'):
-    # outArray = [indexA, valueA, indexB, valueB, rangeValue] * kRange (+1) for computing 
-    outArray = [[-1,float('Infinity'),-1,float('Infinity'),0] for x in range(kRange+1)]
-    #1/ Fill all value of array with increase range
-    iInArray=0
-    # minRange array store index of outArray and value in sorted order of value
-    minRange=[]
-    iInArray,tmp=findNextRange(serie,iInArray, k=kRange+1) # increment iInArray
-    outArray=tmp
-    
-    for i in range(len(outArray)-1):
-        minRange = insertInSortedRangeArray(minRange,outArray[i][4],i)
-    # we sort by rangeValue and split We split the end index (which is use to compare with the rest)
-    #minRange=sorted(len(minRange), key=lambda x:x[1])
-   
-    while iInArray < serie.size + 1: # +1 because we do iInArray==serie.size
-        #Check if range of the last element is better than the min of minRange array
-        previousIInArray=iInArray
-        if minRange[0][0]==len(outArray)-2: # -1 because last element index and -1 because the last element is reserved for temporary
-            if outArray[len(outArray)-1][3] > outArray[len(outArray)-2][3]:
-                outArray[len(outArray)-2][2] = outArray[len(outArray)-1][2]
-                outArray[len(outArray)-2][3] = outArray[len(outArray)-1][3]
-                outArray[len(outArray)-2][4] = outArray[len(outArray)-2][3] - outArray[len(outArray)-2][1]
-                del outArray[len(outArray)-1]
-                minRange=updateInArray(minRange, outArray[len(outArray)-1][4], len(outArray)-1)
-                iInArray,tmp=findNextRange(serie,iInArray, k=1)
-                outArray+=tmp
-                
-            else: # can't merge lastElement of outArray
-                # else: Nothing to do [tmp[0][1],tmp[0][3]] is include in outArray[len(outArray)-1] range
-                iInArray,tmp=findNextRange(serie,iInArray, k=1) 
-                #we update minRange
-                if tmp[0][1] <= outArray[len(outArray)-1][1]: # For shortest range, can be also tmp[0][3] > outArray[len(outArray)-1][3]
-                    outArray[len(outArray)-1] = tmp[0]
-                elif tmp[0][3] > outArray[len(outArray)-1][3]:
-                    outArray[len(outArray)-1][2] = tmp[0][2]
-                    outArray[len(outArray)-1][3] = tmp[0][3]
-                    outArray[len(outArray)-1][4] = outArray[len(outArray)-1][3] - outArray[len(outArray)-1][1]
-
-        if outArray[len(outArray)-1][4] > minRange[0][1]:
-            # Check if the minRange can be merge with the next ones or previous ones
-            # Previous
-            iEndRangePrev=minRange[0][0]
-            iBeginRangePrev=iEndRangePrev-1
-            found=False
-            while not found and iBeginRangePrev>=0 and \
-            outArray[iBeginRangePrev][1]<outArray[iEndRangePrev][1] and \
-            outArray[iBeginRangePrev][3]<outArray[iEndRangePrev][3]:
-                if outArray[iEndRangePrev][3]-outArray[iBeginRangePrev][1]>outArray[len(outArray)-1][4] \
-                or betterThanMinRange(outArray, minRange, iBeginRangePrev, iEndRangePrev):
-                    found=True
-                else:
-                    iBeginRangePrev-=1
-
-            if not found:
-                iBeginRangePrev = iEndRangePrev
-            tmpRangePrev=outArray[iEndRangePrev][3]-outArray[iBeginRangePrev][1]
-            # Next
-            iBeginRangeNext=minRange[0][0]
-            iEndRangeNext=iBeginRangeNext+1
-            found=False
-            while not found and iEndRangeNext<len(outArray)-1 and \
-            outArray[iBeginRangeNext][1]<outArray[iEndRangeNext][1] and \
-            outArray[iBeginRangeNext][3]<outArray[iEndRangeNext][3] :
-                    if outArray[iEndRangeNext][3]-outArray[iBeginRangeNext][1]>outArray[len(outArray)-1][4] \
-                    or betterThanMinRange(outArray, minRange, iBeginRangePrev, iEndRangePrev):
-                        found=True
-                    else:
-                        iEndRangeNext+=1
-            if not found:
-                iEndRangeNext = iBeginRangeNext
-            tmpRangeNext=outArray[iEndRangeNext][3]-outArray[iBeginRangeNext][1]
-            # If become better que new range
-            tmpRange=None
-            iBeginRange=0
-            iEndRange=0
-            if tmpRangePrev>tmpRangeNext or \
-            (tmpRangePrev==tmpRangeNext and \
-             iEndRangePrev-iBeginRangePrev<=iEndRangeNext-iBeginRangeNext) :
-                
-                iBeginRange=iBeginRangePrev
-                iEndRange=iEndRangePrev
-                tmpRange=tmpRangePrev
-            else:
-                iBeginRange=iBeginRangeNext
-                iEndRange=iEndRangeNext
-                tmpRange=tmpRangeNext
-            if tmpRange > outArray[len(outArray)-1][4] \
-            or (nextMinimumIndexOutsideBound(minRange, iBeginRange, iEndRange)!= None and minRange[i][1] < tmpRange):
-                outArray[iBeginRange][3] = outArray[iEndRange][3]
-                outArray[iBeginRange][2] = outArray[iEndRange][2]
-                outArray[iBeginRange][4] = outArray[iEndRange][3]-outArray[iBeginRange][1] # = tmpRange
-                # Delete ranges except the merged ones 
-                del outArray[iBeginRange+1:iEndRange+1]
-
-                # find next range
-                iInArray,tmp=findNextRange(serie,iInArray, k=iEndRange-iBeginRange)
-                outArray+=tmp
-
-                for i in range(len(minRange)-1,-1,-1):
-                    if (minRange[i][0] >= iBeginRange and minRange[i][0] < iEndRange+1):
-                        del minRange[i]
-                    elif (minRange[i][0] > iEndRange):
-                        minRange[i][0] = minRange[i][0] - (iEndRange-iBeginRange)
-                minRange=insertInSortedRangeArray(minRange,outArray[iBeginRange][4],iBeginRange)
-                for i in range(iEndRange-iBeginRange):
-                    minRange=insertInSortedRangeArray(minRange,outArray[len(outArray)-2-i][4],len(outArray)-2-i)
-            else: # If not become better que new range
-                del outArray[minRange[0][0]] # Index of element before the attempt to merge
-                iInArray,tmp=findNextRange(serie,iInArray, k=1)
-                outArray+=tmp
-                for i in range(len(minRange)):
-                    if minRange[i][0] > iEndRange:
-                        minRange[i][0] = minRange[i][0] - 1
-                del minRange[0]
-                minRange=insertInSortedRangeArray(minRange,outArray[len(outArray)-2][4],len(outArray)-2)
-
-
-        else: #if last (tmp) range is lowest than the previous ones
-            # TODO si le nouveau tmp est inferieur au minRange alors tenter de merge sur le dernier element outArray
-            if outArray[len(outArray)-1][3] > outArray[len(outArray)-2][3]:
-                outArray[len(outArray)-2][2] = outArray[len(outArray)-1][2]
-                outArray[len(outArray)-2][3] = outArray[len(outArray)-1][3]
-                outArray[len(outArray)-2][4] = outArray[len(outArray)-2][3] - outArray[len(outArray)-2][1]
-                del outArray[len(outArray)-1]
-                minRange=updateInArray(minRange, outArray[len(outArray)-1][4], len(outArray)-1)
-                iInArray,tmp=findNextRange(serie,iInArray, k=1)
-                outArray+=tmp
-            else: # can't merge lastElement of outArray
-                
-                # else: Nothing to do [tmp[0][1],tmp[0][3]] is include in outArray[len(outArray)-1] range
-                iInArray,tmp=findNextRange(serie,iInArray, k=1) 
-                #we update minRange
-                if tmp[0][1] <= outArray[len(outArray)-1][1]: # For shortest range, can be also tmp[0][3] > outArray[len(outArray)-1][3]
-                    outArray[len(outArray)-1] = tmp[0]
-                elif tmp[0][3] > outArray[len(outArray)-1][3]:
-                    outArray[len(outArray)-1][2] = tmp[0][2]
-                    outArray[len(outArray)-1][3] = tmp[0][3]
-                    outArray[len(outArray)-1][4] = outArray[len(outArray)-1][3] - outArray[len(outArray)-1][1]
-
-        
-    # Remove the last element which was used as tmp
-    outArray = outArray[:-1]
-    # Remove the 0 rangeValue at the end
-    i=len(outArray)-1
-    while i>=0 and outArray[i][4]==0:
-        i-=1
-    outArray = outArray[:i+1]
-    percent=sum(-1+outArray[i][3]/outArray[i][1] for i in range(len(outArray)))
-    percent*=100
-    return outArray, percent
-
 # From DARN github.com/marekgalovic/articles/blob/master/darn/utils.py
 def z_score(x, mean, stddev):
     assert stddev != 0
@@ -563,3 +410,337 @@ def convertDateWithoutTimezone(date, timezone):
     date = date.astimezone(pytz.timezone('Europe/Paris'))
     date = date.replace(tzinfo=None)
     return date
+
+def getAllGrowingRange(array):
+    outArray = []
+    curI = 1
+    isGrowing = False
+    indexStart = 0 # declaration valeur d'initialisation n'a pas d'importance
+    while (curI < len(array)):
+        # Cas d'un début de range croissant
+        if (not isGrowing and array[curI] >= array[curI-1]):
+            indexStart = curI-1
+            isGrowing = True
+        # Cas d'une fin de range croissant
+        elif (isGrowing and array[curI] < array[curI-1]):
+            outArray += [[ indexStart, array[indexStart], curI-1, array[curI-1] ]]
+            isGrowing = False
+        # Cas d'une continuité de range croissant
+        #elif (isGrowing and array[curI] >= array[curI-1]):
+            #pass
+        # Cas d'une continuité de range non croissant
+        #elif (not isGrowing and array[curI] < array[curI-1]):
+            #pass
+        curI += 1
+    if isGrowing:
+        outArray += [[ indexStart, array[indexStart], curI-1, array[curI-1] ]]
+    return outArray
+
+# list = [(key, pair))]
+# pair = (index, diff)
+# dict = key: index in list
+#ex list = [ (1,[1,2]), (2,[2,3])]
+# dict [2:[2,3], 1:[1,2]]
+class dicoSortedValue:
+    def __init__(self):
+        self.list = []
+        self.dico = OrderedDict()
+
+    def __init__(self, listIn):
+        self.list = listIn
+        self.dico = OrderedDict()
+        for el in self.list:
+            self.dico[el[0]] = el[1]
+
+    def add(self, key, pair):
+        index = self.getIndexInListPrivate(pair[1])
+        self.dico[key] = pair
+        self.list.insert(index, (key, pair))
+
+    def removeByKey(self, key):
+        value = self.dico[key][1]
+        index = self.getIndexInListPrivate(value, key)
+
+        del self.dico[key]
+        del self.list[index]
+
+    def getFirstKey(self):
+        return self.list[0][0]
+
+    def getFirstValue(self):
+        return self.list[0][1][1]
+
+    def getFirstIndex(self):
+        return self.list[0][1][0]
+
+    def getIndexByKey(self, key):
+        return self.dico[key][0]
+
+    def getValueByKey(self, key):
+        return self.dico[key][1]
+
+    def getSize(self):
+        return len(self.list)
+
+    # Dichotomy to get range where we have value
+    def getIndexInListPrivate(self, value, key=0):
+        low, mid, high = 0, 0, len(self.list) - 1
+        found = False
+        while low <= high and not found:
+            mid = (low + high) // 2
+            if value < self.list[mid][1][1]:
+                high = mid - 1
+            elif value > self.list[mid][1][1]:
+                low = mid + 1
+            else:
+                found = True
+        # Dans le cas not found
+        if (low>mid or high<mid):
+            mid = low
+
+        # key==-1 pour l'ajout car peut importe ou on ajoute tant que dans la plage contenant la valeur
+        if key==0:
+            iKey = mid
+        else:
+            # on est tombe sur la valeur mais comme on cherche la clef exact de cette valeur faut continuer pour borner la recherche
+            # Left
+            leftRange = low
+            rightIndex = mid
+            # Right
+            rightRange = high
+            leftIndex = mid
+            # Left
+            while leftRange <= rightIndex:
+                mid = (leftRange + rightIndex) // 2
+                if value < self.list[mid][1][1]:
+                    leftRange = mid + 1
+                else: # value = ...
+                    rightIndex = mid - 1
+            # Right
+            while leftIndex <= rightRange:
+                mid = (leftIndex + rightRange) // 2
+                if value > self.list[mid][1][1]:
+                    rightRange = mid - 1
+                else: # value = ...
+                    leftIndex = mid + 1
+
+            # we have (leftRange, rightRange)  self.list[leftRange][1] = self.list[rightRange][1] = value
+            iKey = leftRange
+            found = False
+            while iKey <= rightRange and not found:
+                if self.list[iKey][0] == key:
+                    found = True
+                else:
+                    iKey+=1
+            if not found:
+                iKey = -1
+        return iKey
+
+# Example : [1,3,2,5,2,4]
+#       x
+#            x   
+#   x       
+#     x   x
+# x
+# 
+# npArrayOfRange = [indA, val1, indB, valB, diff, 0/1/-1, iNext, key, iBefore]
+# Entree:  npArrayObj = [1,3,2,5,2,4] k = [1,2,3,5]
+# Sortie : res = [k=1 [indexA, indexB], k=2 [indexA, indexB]]
+def getPotential(npArrayObj,k):
+    # corrige moi la ligne ci dessiys
+    indA = 0 # Indice début range
+    valA = 1 # Valeur début range
+    indB = 2 # Indice fin range
+    valB = 3 # Valeur fin range
+    diff = 4 # Différence entre les deux valeurs
+    iBMerge = 5 # Si le range peut être mergé avec le suivant -1 si supprimé, 0 si pas mergé, 1 si mergé
+    iBefore = 6 # Indice du précédent
+    iNext = 7 # Indice du suivant
+    iKey = 8 # clef faisant la liaison avec la structure qui est trié
+
+    k = sorted(k, reverse=True)
+    # k = sort(k) pour petite optimisation on le fait pas
+    # 1/ Récupére une liste de tout les ranges croissants
+    npArrayOfRange = getAllGrowingRange(npArrayObj)
+
+    # Example: result = [[0,1,1,3],[2,2,3,5],[4,2,5,4]]
+    for i in range(len(npArrayOfRange) - 1):
+        if (npArrayOfRange[i+1][valA] > npArrayOfRange[i][valA]) and (npArrayOfRange[i+valA][valB] > npArrayOfRange[i][valB]):
+            valDiff = ( (npArrayOfRange[i][valB] / npArrayOfRange[i][valA])  + (npArrayOfRange[i+1][valB] / npArrayOfRange[i+1][valA]) ) - (npArrayOfRange[i+1][valB] / npArrayOfRange[i][valA])
+            npArrayOfRange[i] += [valDiff]
+            npArrayOfRange[i] += [1] # type : Merge
+        else: # pas de fusion
+            npArrayOfRange[i] += [npArrayOfRange[i][valB] / npArrayOfRange[i][valA]]
+            npArrayOfRange[i] += [0] # type : Delete
+        npArrayOfRange[i] += [i-1]
+        npArrayOfRange[i] += [i+1]
+        npArrayOfRange[i] += [-1] # en attendant la clef
+
+
+    # Last element
+    if len(npArrayOfRange) > 0:
+        npArrayOfRange[-1] += [npArrayOfRange[-1][valB] / npArrayOfRange[-1][valA]]
+        npArrayOfRange[-1] += [0] # Delete
+        npArrayOfRange[-1] += [len(npArrayOfRange) - indB] # len(npArrayOfRange) - 1 - 1 : dernier -1
+        npArrayOfRange[-1] += [-1] # Delete on est a la fin donc pas d'index a mettre
+        npArrayOfRange[-1] += [-1] # en attendant
+
+    # Example: result = [[0,1,1,3, diff:1,type:1,iMerge:1],[2,2,3,5, diff:3,type:0,iMerge:-1],[4,2,iBMerge,4, diff:2,type:0,iMerge:-1]]
+
+    #Lorsque vous itérez sur sorted_list en utilisant enumerate, chaque élément renvoyé par enumerate 
+    #est un tuple contenant l'index et la valeur correspondante dans la liste d'origine. 
+    #Dans ce cas, nous sommes uniquement intéressés par l'index, donc nous l'affectons à la variable i et 
+    #nous ignorons la valeur correspondante en utilisant '_'.
+    sorted_list = sorted(enumerate(npArrayOfRange), key=lambda x: x[1][diff])
+    indexSortedArray = [i for i, _ in sorted_list]
+    # resIndexSorted [0,2,1]
+
+    uniqueKey = -1 # negatif pour ne pas confondre avec l'index dans la structure dico ordonné
+
+    # Initial - desynchronized list and dico but get the already sorted np array
+    listTmp = []
+    for i in range(len(indexSortedArray)):
+        # On ajoute la valeur "diff" pour pouvoir ensuite ajouter a ce tableau les prochain elements
+        listTmp += [(uniqueKey, [indexSortedArray[i], npArrayOfRange[indexSortedArray[i]][diff]])]
+
+        npArrayOfRange[indexSortedArray[i]][iKey] = uniqueKey # peut etre a supprimer ou pas selon l'utilise de dicoNpArrayOfRange
+        uniqueKey -= 1
+    # listTmp = (-1, [0,1]), (-2, [2,2]), (-3, [1,3])]
+    dicoIndexSorted = dicoSortedValue(listTmp)
+
+    # result =  [[0,1,1,3, diff:1,type:1,iMerge:1,key:1], [2,2,3,5, diff:3,type:0,iMerge:-1,key:3], [4,2,5,4, diff:2,type:0,iMerge:-1,key:2]]
+    #result index : [[0,1,1],  [2,3,2],  [1,2,3]]
+
+    firstElementNotDeleted = 0
+    resultIndex = []
+    resultPercent = []
+    resultPercentTotal = []
+    curK = 0
+    # Créer moi un tableau de 5 entiers
+    
+    while dicoIndexSorted.getSize() >= k[-1] and dicoIndexSorted.getSize() > 0:
+
+        # Si on n'en a pas trouve suffisemment au début
+        while dicoIndexSorted.getSize() < k[curK] : # and dicoIndexSorted.getSize() > 0 tester deja plus haut
+            curK += 1
+            resultIndex += [[]]
+            resultPercent += [[]] #SI pas de valeur on met a vide
+            resultPercentTotal += [[]] #SI pas de valeur on met a vide
+
+        if dicoIndexSorted.getSize() == k[curK]:
+            curResult = []
+            curPercent = []
+            i = firstElementNotDeleted
+            while i!= -1 : # ou len(curResult) < k[curK]
+                curElement = [npArrayOfRange[i][indA], npArrayOfRange[i][indB]]
+                curResult += [curElement]
+                curPercent += [(-1+npArrayObj[curElement[1]]/npArrayObj[curElement[0]])*100]
+                i =  npArrayOfRange[i][iNext]
+            percent=sum(curPercent)
+            resultPercentTotal += [percent]
+            resultIndex += [curResult]
+            resultPercent += [curPercent]
+            curK += 1
+
+        if (dicoIndexSorted.getSize() <= k[-1]):
+            break
+        key = dicoIndexSorted.getFirstKey()
+
+        indexOfWeakestRange = dicoIndexSorted.getIndexByKey(key)
+        if npArrayOfRange[indexOfWeakestRange][iBMerge] == 1: # Merge
+            indexRangeToMerge = npArrayOfRange[indexOfWeakestRange][iNext] # indexRangeToMerge est forcement != -1 car l'element ne serai pas marque comme mergeable
+            npArrayOfRange[indexOfWeakestRange][indB] = npArrayOfRange[indexRangeToMerge][indB] # Copy indexB
+            npArrayOfRange[indexOfWeakestRange][valB] = npArrayOfRange[indexRangeToMerge][valB] # Copy valueB
+            # Si le range etait un range de merge
+            nextRangeBis = npArrayOfRange[indexRangeToMerge][iNext] # On regarde quel était le prochain
+            # si celui qu'on va supprimer pour cause de merge n'était pas mergeable notre range courant peut 
+            # le devenir car on part de plus "bas" (indexA est plus faible que l'était le range de droite avant fusion)
+            if npArrayOfRange[indexRangeToMerge][iBMerge] != 1: 
+                if (nextRangeBis!= -1 and (npArrayOfRange[nextRangeBis][valA] > npArrayOfRange[indexOfWeakestRange][valA]) and (npArrayOfRange[nextRangeBis][valB] > npArrayOfRange[indexOfWeakestRange][valB])): # Forcement np[indexOfWeakestRange][valB] > np[nextRangeBis][valA] 
+                    npArrayOfRange[indexOfWeakestRange][iBMerge] = 1 # continue a etre mergeable
+                    valDiff = ( (npArrayOfRange[indexOfWeakestRange][valB] / npArrayOfRange[indexOfWeakestRange][valA])  + (npArrayOfRange[nextRangeBis][valB] / npArrayOfRange[nextRangeBis][valA]) ) - (npArrayOfRange[nextRangeBis][valB] / npArrayOfRange[indexOfWeakestRange][valA])
+                    npArrayOfRange[indexOfWeakestRange][diff] = valDiff # continue a etre mergeable ecart de merge
+                else:
+                    npArrayOfRange[indexOfWeakestRange][iBMerge] = 0 # n'est plus mergeable
+                    npArrayOfRange[indexOfWeakestRange][diff] = npArrayOfRange[indexOfWeakestRange][valB] / npArrayOfRange[indexOfWeakestRange][valA] # calcul nouvel ecart normal
+            else: # Si le range était mergeable on le reste mais avec un nouveau calcul
+                valDiff = ( (npArrayOfRange[indexOfWeakestRange][valB] / npArrayOfRange[indexOfWeakestRange][valA])  + (npArrayOfRange[nextRangeBis][valB] / npArrayOfRange[nextRangeBis][valA]) ) - (npArrayOfRange[nextRangeBis][valB] / npArrayOfRange[indexOfWeakestRange][valA])
+                npArrayOfRange[indexOfWeakestRange][diff] = valDiff # continue a etre mergeable ecart de merge
+
+            # MAJ de l'ecart precedent
+            beforeRange = npArrayOfRange[indexOfWeakestRange][iBefore]
+            if beforeRange >= 0:
+                if ( (npArrayOfRange[indexOfWeakestRange][valA] > npArrayOfRange[beforeRange][valA]) and (npArrayOfRange[indexOfWeakestRange][valB] > npArrayOfRange[beforeRange][valB]) ):
+                    npArrayOfRange[beforeRange][iBMerge] = 1 # continue a etre mergeable
+                    npArrayOfRange[beforeRange][diff] = ( (npArrayOfRange[beforeRange][valB] / npArrayOfRange[beforeRange][valA])  + (npArrayOfRange[indexOfWeakestRange][valB] / npArrayOfRange[indexOfWeakestRange][valA]) ) - (npArrayOfRange[indexOfWeakestRange][valB] / npArrayOfRange[beforeRange][valA])
+                    # on supprime l'element d'avant qui est mergeable et qui a changé de valeur 
+                    clefIndexMergeDelete = npArrayOfRange[beforeRange][iKey]
+                    dicoIndexSorted.removeByKey(clefIndexMergeDelete)
+                    # On le remet au bon endroit
+                    # Il ne doit pas changer de key
+                    dicoIndexSorted.add(clefIndexMergeDelete, (beforeRange, npArrayOfRange[beforeRange][diff]))
+                
+            npArrayOfRange[indexOfWeakestRange][iNext] = nextRangeBis # index du prochain élement
+            if nextRangeBis >= 0:
+                npArrayOfRange[nextRangeBis][iBefore] = indexOfWeakestRange # index du précédent element sur le prochain element mergeable
+
+
+
+
+            # Il reste le calcul de la clef et l'entretien du tableau trié
+            # on supprime le premier element trié (par index)
+            dicoIndexSorted.removeByKey(key)
+
+            # on supprime l'element qui a été mergé cas unique du merge (par clef)
+            clefIndexMergeDelete = npArrayOfRange[indexRangeToMerge][iKey]
+            dicoIndexSorted.removeByKey(clefIndexMergeDelete)
+
+            # On ajoute le nouvel element fusionné
+            dicoIndexSorted.add(uniqueKey, (indexOfWeakestRange, npArrayOfRange[indexOfWeakestRange][diff]))
+
+            npArrayOfRange[indexOfWeakestRange][iKey] = uniqueKey # on associe la clef de l'index a ce tableau
+            uniqueKey-=1
+
+            npArrayOfRange[indexRangeToMerge][iBMerge] = -1 # To signal the element is deleted
+
+
+        else: # Delete
+            # Changer l'index du suivant du précédent
+            # on saute l'element supprime
+            indexPrevious = npArrayOfRange[indexOfWeakestRange][iBefore]
+            indexNext = npArrayOfRange[indexOfWeakestRange][iNext]
+            # on maj pour le prochain range l'index avant qui dois sauter celui qu'on vient de supprimer
+            if indexNext >= 0:
+                npArrayOfRange[indexNext][iBefore] = npArrayOfRange[indexOfWeakestRange][iBefore]
+            #on maj le précédent qui doit sauter celui qu'on vient de supprimer
+            if indexPrevious >= 0:
+                npArrayOfRange[indexPrevious][iNext] = npArrayOfRange[indexOfWeakestRange][iNext]
+                # Pour le précédent sa mergeabilité peut changer
+                if npArrayOfRange[indexNext][iBMerge] != -1: # Si pas supprimer
+                    if (indexNext!= -1 and (npArrayOfRange[indexNext][valA] > npArrayOfRange[indexPrevious][valA]) and (npArrayOfRange[indexNext][valB] > npArrayOfRange[indexPrevious][valB])):
+                        npArrayOfRange[indexPrevious][iBMerge] = 1 #  est mergeable
+                        valDiff = ( (npArrayOfRange[indexPrevious][valB] / npArrayOfRange[indexPrevious][valA])  + (npArrayOfRange[indexNext][valB] / npArrayOfRange[indexNext][valA]) ) - (npArrayOfRange[indexNext][valB] / npArrayOfRange[indexPrevious][valA])
+                        npArrayOfRange[indexPrevious][diff] = valDiff
+
+                        # on supprime l'element d'avant qui est mergeable et qui a changé de valeur 
+                        clefIndexMergeDelete = npArrayOfRange[indexPrevious][iKey]
+                        dicoIndexSorted.removeByKey(clefIndexMergeDelete)
+                        # On le remet au bon endroit
+                        # Il ne doit pas changer de key
+                        dicoIndexSorted.add(clefIndexMergeDelete, (indexPrevious, npArrayOfRange[indexPrevious][diff]))
+                        #uniqueKey-=1
+
+                    else:
+                        npArrayOfRange[indexPrevious][iBMerge] = 0 # n'est plus mergeable
+                else:
+                    npArrayOfRange[indexPrevious][iBMerge] = 0
+            ## Que fait ces deux lignes ? 
+            #key = dicoIndexSorted.getFirstKey() # Une clef a pu etre rajouter
+            dicoIndexSorted.removeByKey(key)
+            
+            npArrayOfRange[indexOfWeakestRange][iBMerge] = -1 # To signal the element is deleted
+
+            if firstElementNotDeleted == indexOfWeakestRange:
+                firstElementNotDeleted = npArrayOfRange[indexOfWeakestRange][iNext]
+
+    return resultIndex, resultPercent, resultPercentTotal

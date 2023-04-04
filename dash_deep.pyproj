@@ -7,7 +7,7 @@
     <ProjectHome>
     </ProjectHome>
     <ProjectTypeGuids>{789894c7-04a9-4a11-a6b5-3f4435165112};{1b580a1a-fdb3-4b32-83e1-6407eb2722e6};{349c5851-65df-11da-9384-00065b846f21};{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
-    <StartupFile>scripts\update_data_launcher.py</StartupFile>
+    <StartupFile>main.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -22,7 +22,7 @@
     <SuppressConfigureTestFrameworkPrompt>true</SuppressConfigureTestFrameworkPrompt>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
     <CommandLineArguments>-checkDuplicate</CommandLineArguments>
-    <InterpreterId>CondaEnv|CondaEnv|env</InterpreterId>
+    <InterpreterId>Global|VisualStudio|financial_analysis</InterpreterId>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -71,6 +71,7 @@
   <ItemGroup>
     <Content Include="assets\stylesheet.css" />
     <Content Include="requirements.txt" />
+    <Content Include="templates\index.html" />
     <Content Include="users.py" />
   </ItemGroup>
   <ItemGroup>
@@ -78,10 +79,12 @@
     <Folder Include="assets\" />
     <Folder Include="Models\" />
     <Folder Include="deepLearning\" />
+    <Folder Include="templates\" />
     <Folder Include="scripts\" />
   </ItemGroup>
   <ItemGroup>
-    <InterpreterReference Include="CondaEnv|CondaEnv|env" />
+    <InterpreterReference Include="CondaEnv|CondaEnv|financial_analysis" />
+    <InterpreterReference Include="Global|VisualStudio|financial_analysis" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.Web.targets" />
   <!-- Specify pre- and post-build commands in the BeforeBuild and 

@@ -11,7 +11,7 @@ t=time.time()
 
 shM = sm.Shares(readOnlyThosetoUpdate=True)
 
-shM.computeStatsForAllShares(shM.computeLastRecord)
+shM.computeStatsForAllShares(shM.computePotential)
 
 print(f"Time: {time.time()-t}s")
 
