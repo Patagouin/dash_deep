@@ -7,7 +7,7 @@
     <ProjectHome>
     </ProjectHome>
     <ProjectTypeGuids>{789894c7-04a9-4a11-a6b5-3f4435165112};{1b580a1a-fdb3-4b32-83e1-6407eb2722e6};{349c5851-65df-11da-9384-00065b846f21};{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
-    <StartupFile>main.py</StartupFile>
+    <StartupFile>scripts\update_data_launcher.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -21,7 +21,8 @@
     <IsWindowsApplication>False</IsWindowsApplication>
     <SuppressConfigureTestFrameworkPrompt>true</SuppressConfigureTestFrameworkPrompt>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
-    <CommandLineArguments>-checkDuplicate</CommandLineArguments>
+    <CommandLineArguments>
+    </CommandLineArguments>
     <InterpreterId>Global|VisualStudio|financial_analysis</InterpreterId>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
@@ -34,8 +35,11 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="appMain.py" />
+    <Compile Include="apps\sharedFig.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="apps\prediction.py" />
     <Compile Include="apps\update.py" />
-    <Compile Include="apps\app2.py" />
     <Compile Include="apps\dashboard.py">
       <SubType>Code</SubType>
     </Compile>
@@ -62,6 +66,7 @@
     </Compile>
     <Compile Include="scripts\add_tickers_launcher.py" />
     <Compile Include="scripts\test_launcher.py" />
+    <Compile Include="scripts\test_lstm.py" />
     <Compile Include="scripts\update_data_launcher.py" />
     <CodeAnalysisDictionary Include="scripts\update_stats_launcher.py" />
     <Compile Include="__init__.py">

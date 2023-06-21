@@ -1,21 +1,13 @@
 import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
-
 import dash_daq as daq
-
-#useless
-import dash_bootstrap_components as dbc
-
 import plotly.graph_objs as go
 
 import datetime
 
 from appMain import app, shM
-
-
-
-fig = go.FigureWidget()
+from .sharedFig import fig
 
 
 layout = html.Div([
@@ -23,7 +15,7 @@ layout = html.Div([
     dcc.Dropdown(
         id='dashboard_dropdown',
         options=[
-            {'label': '{}'.format(stock.symbol), 'value': stock.symbol} for stock in shM.listShares.itertuples()
+            {'label': '{}'.format(stock.symbol), 'value': stock.symbol} for stock in shM.dfShares.itertuples()
         ],
         multi=True
     ),
@@ -41,7 +33,10 @@ layout = html.Div([
         start_date=datetime.datetime.now()-datetime.timedelta(days=7),
         end_date=datetime.datetime.now()
     ),
-    dcc.Link('Go update', href='/update')
+    html.Br(),
+    dcc.Link('Go update', href='/update'),
+    html.Br(),
+    dcc.Link('Go to prediction', href='/prediction')
 ])
 
 @app.callback(
@@ -51,7 +46,7 @@ layout = html.Div([
     Input('date_picker_range', 'end_date'),
     Input('boolean_switch_normalize', 'on')
     )
-def display_value(values, start_date, end_date, toNormalize):
+def display_stock_graph(values, start_date, end_date, toNormalize):
 
     if values is None:
         fig = go.FigureWidget()
@@ -77,13 +72,16 @@ def display_value(values, start_date, end_date, toNormalize):
     fig.update_layout(legend_bgcolor='#00FF00')
     #fig.update_layout(xaxis_tickformat = '%d %B<br>%Y')
     fig.layout.title = 'Shares quots'
-    listShares = shM.getRowsByKeysValues(['symbol']*len(values),values)
+    dfShares = shM.getRowsDfByKeysValues(['symbol']*len(values),values, op = '|')
 
-    dfData = shM.getListDfDataFromDf(listShares, dateBegin, dateLast)
+    listDfData = shM.getListDfDataFromDfShares(dfShares, dateBegin, dateLast)
     #dfData[0]; [0] because getListDfDataFromDf give an array of df
-    if toNormalize and len(dfData) > 0 and dfData[0]['openPrice'][0] > 0: #Avoid divided by zero
-        dfData[0]['openPrice'] /= dfData[0]['openPrice'][0]
-    fig.add_scatter(name=value, x=dfData[0].index.values, y=dfData[0]['openPrice'].values)
+    for i, dfData in enumerate(listDfData):
+        if not dfData.empty:
+            if toNormalize and dfData['openPrice'][0] > 0:#Avoid divided by zero
+                dfData['openPrice'] /= dfData['openPrice'][0]
+            #fig.add_scatter(name="Quotations", x=dfData[0].index.values, y=dfData[0]['openPrice'].values)
+            fig.add_scatter(name=values[i], x=dfData.index.values, y=dfData['openPrice'].values)
 
   
     return fig

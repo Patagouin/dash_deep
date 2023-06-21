@@ -1,178 +1,208 @@
-import numpy as np # linear algebra
-from numpy import newaxis
-import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
-from keras.layers.core import Dense, Activation, Dropout
-from keras.layers.recurrent import LSTM, GRU
-from keras.models import Sequential
-from keras import optimizers
+import numpy as np
+import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, LSTM
+import Models.SqlCom as sq
+import Models.utils as ut
+import Models.Shares as sm
+import datetime
+import math
 import matplotlib.pyplot as plt
-plt.style.use('fivethirtyeight')
 
-print ('import completed')
+#def create_dataset(data, look_back, prediction_horizon):
+#    X, y = [], []
+#    for i in range(len(data) - look_back - prediction_horizon):
+#        X.append(data[i:(i + look_back), 0])
+#        y.append(data[(i + look_back):(i + look_back + prediction_horizon), 0])
+#    return np.array(X), np.array(y)
 
-# Enter in how much steps we will enroll the network.
-# RNN/LSTM/GRU can be taught patterns over times series as big as the number of times you enrol them, and no bigger (fundamental limitation). 
-# So by design these networks are deep/long to catch recurrent patterns.
-Enrol_window = 100
+#def create_dataset(dataset, look_back):
+#    data_X, data_Y = [], []
+#    for i in range(0,len(dataset) - look_back, look_back):
+#        a = dataset[i:(i + look_back), :]
+#        data_X.append(a)
+#        data_Y.append(dataset[i + look_back, 0])
+#    return np.array(data_X), np.array(data_Y)
 
-print ('enrol window set to',Enrol_window )
 
-# Support functions
-sc = MinMaxScaler(feature_range=(0,1))
-def load_data(datasetname, column, seq_len, normalise_window):
-    # A support function to help prepare datasets for an RNN/LSTM/GRU
-    data = datasetname.loc[:,column]
+def create_dataset(dataset, look_back, nb_quots_by_day):
+    data_X, data_Y = [], []
+    for i in range(0,len(dataset) - 2*look_back, 1):
+       # if (i//nb_quots_by_day ==  (i+2*look_back)//nb_quots_by_day ): # Il faudrait éviter la fin de journée le probleme 
 
-    sequence_length = seq_len + 1
-    result = []
-    for index in range(len(data) - sequence_length):
-        result.append(data[index: index + sequence_length])
+        a = dataset[i:(i + look_back), :]
+        data_X.append(a)
+        b = dataset[(i + look_back):(i + 2*look_back), :]
+        data_Y.append(b)
+    return np.array(data_X), np.array(data_Y)
+
+def test_lstm(shareObj, data_quots):
+    df = ut.prepareData(shareObj, data_quots) #column="openPrice"
+
+    np.random.seed(42)
+
+
+    # Normalize the dataset
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    dataset = scaler.fit_transform(df) 
+
+    # Split the dataset into training and testing sets
+    nb_minute_until_open = shareObj.openRichMarketTime.hour * 60 + shareObj.openRichMarketTime.minute
+    nb_minute_until_close = shareObj.closeRichMarketTime.hour * 60 + shareObj.closeRichMarketTime.minute
+    nb_quots_by_day = (nb_minute_until_close - nb_minute_until_open) + 1 # +1 interval inclus
+    nb_days_quots_total = len(dataset) // nb_quots_by_day
+    nb_days_quots_train = math.floor(nb_days_quots_total) - 1
+    train_size = nb_days_quots_train * nb_quots_by_day
+    train, test = dataset[0:train_size, :], dataset[train_size:len(dataset), :]
+
+    look_back = 60
+
+    # Prepare the data with a look_back
+    trainX, trainY = create_dataset(train, look_back, nb_quots_by_day)
+    testX, testY = create_dataset(test, look_back, nb_quots_by_day)
+
+    # Reshape input to be [samples, time steps, features]
+    trainX = np.reshape(trainX, (trainX.shape[0], trainX.shape[1], -1))
+    testX = np.reshape(testX, (testX.shape[0], testX.shape[1], -1))
+
+    # Create lists to store the error values
+    train_scores = []
+    test_scores = []
+    figures = []  # Liste pour stocker les figures
+
+    # Create and fit the LSTM model
+    model = Sequential()
+    model.add(LSTM(look_back, input_shape=(look_back, 1), return_sequences=True))
+    model.add(Dense(look_back))
+    model.add(LSTM(look_back))
+    model.add(Dense(look_back))
+    model.compile(loss='mean_squared_error', optimizer='adam')
+
+    # Loop over epochs and track the error values
+    trainYInv = scaler.inverse_transform(trainY.reshape(trainY.shape[0], -1))
+    testYInv = scaler.inverse_transform(testY.reshape(testY.shape[0], -1))
+
+    epochs = 2
+    for epoch in range(epochs):
+        model.fit(trainX, trainY, epochs=1, batch_size=nb_quots_by_day, verbose=2)
     
-    if normalise_window:
-        #result = sc.fit_transform(result)
-        result = normalise_windows(result)
-
-    result = np.array(result)
-
-    #Last 10% is used for validation test, first 90% for training
-    row = round(0.9 * result.shape[0])
-    train = result[:int(row), :]
-    np.random.shuffle(train)
-    x_train = train[:, :-1]
-    y_train = train[:, -1]
-    x_test = result[int(row):, :-1]
-    y_test = result[int(row):, -1]
-
-    x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
-    x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))  
-
-    return [x_train, y_train, x_test, y_test]
-
-def normalise_windows(window_data):
-    # A support function to normalize a dataset
-    normalised_data = []
-    for window in window_data:
-        normalised_window = [((float(p) / float(window[0])) - 1) for p in window]
-        normalised_data.append(normalised_window)
-    return normalised_data
-
-def predict_sequence_full(model, data, window_size):
-    #Shift the window by 1 new prediction each time, re-run predictions on new window
-    curr_frame = data[0]
-    predicted = []
-    for i in range(len(data)):
-        predicted.append(model.predict(curr_frame[newaxis,:,:])[0,0])
-        curr_frame = curr_frame[1:]
-        curr_frame = np.insert(curr_frame, [window_size-1], predicted[-1], axis=0)
-    return predicted
-
-def predict_sequences_multiple(model, data, window_size, prediction_len):
-    #Predict sequence of <prediction_len> steps before shifting prediction run forward by <prediction_len> steps
-    prediction_seqs = []
-    for i in range(int(len(data)/prediction_len)):
-        curr_frame = data[i*prediction_len]
-        predicted = []
-        for j in range(prediction_len):
-            predicted.append(model.predict(curr_frame[newaxis,:,:])[0,0])
-            curr_frame = curr_frame[1:]
-            curr_frame = np.insert(curr_frame, [window_size-1], predicted[-1], axis=0)
-        prediction_seqs.append(predicted)
-    return prediction_seqs
-
-def plot_results(predicted_data, true_data): 
-    fig = plt.figure(facecolor='white') 
-    ax = fig.add_subplot(111) 
-    ax.plot(true_data, label='True Data') 
-    plt.plot(predicted_data, label='Prediction') 
-    plt.legend() 
-    plt.show() 
+        # Make predictions
+        trainPredict = model.predict(trainX)
+        #testPredict = model.predict(testX)
     
-def plot_results_multiple(predicted_data, true_data, prediction_len):
-    fig = plt.figure(facecolor='white')
-    ax = fig.add_subplot(111)
-    ax.plot(true_data, label='True Data')
-    #Pad the list of predictions to shift it in the graph to it's correct start
-    for i, data in enumerate(predicted_data):
-        padding = [None for p in range(i * prediction_len)]
-        plt.plot(padding + data, label='Prediction')
-        plt.legend()
+        # Invert predictions
+        trainPredict = scaler.inverse_transform(trainPredict)
+        #testPredict = scaler.inverse_transform(testPredict)
+    
+        # Calculate root mean squared error
+        trainScore = np.sqrt(mean_squared_error(trainYInv, trainPredict))
+        #testScore = np.sqrt(mean_squared_error(testYInv, testPredict))
+    
+        # Store the error values
+        train_scores.append(trainScore)
+        #test_scores.append(testScore)
+    
+        print(f'Epoch {epoch+1}: Train Score = {trainScore:.2f} RMSE')
+
+    # Make predictions
+    testPredict = testX[0] # [nb_quots_day,loop_back,1]
+
+    #testInstance = np.expand_dims(testX[0][i:i+look_back], axis=0)  # L'entrée doit être de dimension [samples, time steps, features]
+    #predictInstance = model.predict(testInstance)
+    #predictInstance = np.reshape(predictInstance[0], (1, 1))
+    #testPredict = np.append(testPredict, predictInstance, axis=0)
+
+    for i in range(0,nb_quots_by_day - 2*look_back, look_back): #for i in range(0,nb_quots_by_day - 2*look_back, ):
+        testInstance = np.expand_dims(testPredict[i:i+look_back], axis=0)  # L'entrée doit être de dimension [samples, time steps, features]
+        predictInstance = model.predict(testInstance)
+        predictInstance = np.reshape(predictInstance[0], (look_back, 1)) # predictInstance = np.reshape(predictInstance[0], (1, 1))
+        testPredict = np.concatenate((testPredict, predictInstance), axis=0) #np.append(testPredict, predictInstance, axis=0)
+
+    testPredict = np.array(testPredict).reshape(-1, 1)  # Convertir la liste en numpy array et redimensionner
+    testPredict = scaler.inverse_transform(testPredict)  # Inverser la normalisation
+
+    #testPredict = model.predict(testX)
+    #testPredict = scaler.inverse_transform(testPredict)
+    # Rajout des loop_back valeurs de testX
+    testX_inv = scaler.inverse_transform(testX[0])
+    #testYInv = np.concatenate((testX_inv, testYInv), axis=0)
+
+    testScore = np.sqrt(mean_squared_error(testYInv, testPredict))
+    print(f'Epoch {epoch+1}: Test Score = {testScore:.2f} RMSE')
+
+    plt.plot(testYInv, label='Actual')
+    plt.plot(testPredict, label='Predicted')
+    plt.xlabel('Time')
+    plt.ylabel('Value')
+
+    # Plot the error values
+    plt.plot(train_scores, label='Train Score')
+    plt.xlabel('Epoch')
+    plt.ylabel('RMSE')
+    plt.legend()
+
     plt.show()
 
-print ('Support functions defined')
-
-# Load the data
-dataset = pd.read_csv('../input/sinwave/Sin Wave Data Generator.csv')
-dataset["Wave"][:].plot(figsize=(16,4),legend=False)
-
-# Prepare the dataset, note that all data foer the sinus wave is already normalized between 0 and 1
-# A label is the thing we're predicting
-# A feature is an input variable, in this case a stock price
-
-feature_train, label_train, feature_test, label_test = load_data(dataset, 'Wave', Enrol_window, False)
-
-print ('Datasets generated')
-
-# The LSTM model I would like to test
-# Note: replace LSTM with GRU or RNN if you want to try those
-
-model = Sequential()
-model.add(LSTM(50, return_sequences=True, input_shape=(feature_train.shape[1],1)))
-model.add(Dropout(0.2))
-model.add(LSTM(100, return_sequences=False))
-model.add(Dropout(0.2))
-model.add(Dense(1, activation = "linear"))
-
-model.compile(loss='mse', optimizer='adam')
-
-print ('model compiled')
-
-print (model.summary())
-
-#Train the model
-model.fit(feature_train, label_train, batch_size=512, epochs=10, validation_data = (feature_test, label_test))
-
-#Let's use the model and predict the wave
-predictions= predict_sequence_full(model, feature_test, Enrol_window)
-plot_results(predictions,label_test)
-
-# Let's get the stock data
-dataset = pd.read_csv('../input/stock-time-series-20050101-to-20171231/IBM_2006-01-01_to_2018-01-01.csv', index_col='Date', parse_dates=['Date'])
-dataset.head()
-
-# Prepare the dataset, note that the stock price data will be normalized between 0 and 1
-# A label is the thing we're predicting
-# A feature is an input variable, in this case a stock price
-# Selected 'Close' (stock pric at closing) attribute for prices. Let's see what it looks like
-
-feature_train, label_train, feature_test, label_test = load_data(dataset, 'Close', Enrol_window, True)
-
-dataset["Close"][:'2016'].plot(figsize=(16,4),legend=True)
-dataset["Close"]['2017':].plot(figsize=(16,4),legend=True) # 10% is used for thraining data which is approx 2017 data
-plt.legend(['Training set (First 90%, approx before 2017)','Test set (Last 10%, approax 2017 and beyond)'])
-plt.title('IBM stock price')
-plt.show()
+    return model, trainScore, testScore
 
 
-# The same LSTM model I would like to test, lets see if the sinus prediction results can be matched
-# Note: replace LSTM with GRU or RNN if you want to try those
+# La difference avec la fonction de test au dessus est l'ensemble de train qui prend toutes les cotations
+def compute_lstm(shareObj, data_quots):
+    df = ut.prepareData(shareObj, data_quots) #column="openPrice"
 
-model = Sequential()
-model.add(LSTM(50, return_sequences=True, input_shape=(feature_train.shape[1],1)))
-model.add(Dropout(0.2))
-model.add(LSTM(100, return_sequences=False))
-model.add(Dropout(0.2))
-model.add(Dense(1, activation = "linear"))
+    np.random.seed(42)
 
-model.compile(loss='mse', optimizer='adam')
+    look_back = 1
 
-print ('model compiled')
+    # Normalize the dataset
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    dataset = scaler.fit_transform(df) 
+    #df['Open'].values.reshape(-1, 1))
+    #dataset = df.values
+    #dataset[:, 0] = scaler.fit_transform(df['openPrice'].values.reshape(-1, 1)).flatten()
 
-print (model.summary())
+    # Split the dataset into training and testing sets
+    nb_minute_until_open = shareObj.openRichMarketTime.hour * 60 + shareObj.openRichMarketTime.minute
+    nb_minute_until_close = shareObj.closeRichMarketTime.hour * 60 + shareObj.closeRichMarketTime.minute
+    nb_minute_quot_duration = (nb_minute_until_close - nb_minute_until_open)
+    nb_days_quots_total = len(dataset) // nb_minute_quot_duration
+    nb_days_quots_train = nb_days_quots_total
+    train_size = nb_days_quots_train * nb_minute_quot_duration
+    train, test = dataset[0:train_size, :], dataset[train_size:len(dataset), :]
 
-#Train the model
-model.fit(feature_train, label_train, batch_size=512, epochs=5, validation_data = (feature_test, label_test))
+    # Prepare the data with a look_back
+    trainX, trainY = create_dataset(train, look_back)
+    testX, testY = create_dataset(test, look_back)
 
-#Let's use the model and predict the stock
-predicted_stock_price = model.predict(feature_test)
-plot_results(predicted_stock_price,label_test)
+    # Reshape input to be [samples, time steps, features]
+    trainX = np.reshape(trainX, (trainX.shape[0], trainX.shape[1], -1))
+    testX = np.reshape(testX, (testX.shape[0], testX.shape[1], -1))
+
+    # Create and fit the LSTM model
+    model = Sequential()
+    model.add(LSTM(4, input_shape=(look_back, 1)))
+    model.add(Dense(1))
+    model.compile(loss='mean_squared_error', optimizer='adam')
+    model.fit(trainX, trainY, epochs=10, batch_size=nb_minute_quot_duration, verbose=2)
+
+    # Make predictions
+    trainPredict = model.predict(trainX)
+    testPredict = model.predict(testX)
+
+    # Invert predictions
+    trainPredict = scaler.inverse_transform(trainPredict)
+    trainY = scaler.inverse_transform(trainY.reshape(-1, 1))
+    testPredict = scaler.inverse_transform(testPredict)
+    testY = scaler.inverse_transform(testY.reshape(-1, 1))
+
+	# Calculate root mean squared error
+    trainScore = np.sqrt(mean_squared_error(trainY, trainPredict)) #trainScore = np.sqrt(mean_squared_error(trainY[0], trainPredict[:, 0]))
+
+    
+    print(f'Train Score: {trainScore:.2f} RMSE')
+    testScore = np.sqrt(mean_squared_error(testY, testPredict)) #testScore = np.sqrt(mean_squared_error(testY[0], testPredict[:, 0]))
+    print(f'Test Score: {testScore:.2f} RMSE')
+
+    return model, trainScore, testScore

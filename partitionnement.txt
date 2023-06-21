@@ -1,0 +1,50 @@
+CREATE TABLE public.shares_prices_quots_parent (
+    "time" timestamp without time zone NOT NULL,
+    "openPrice" numeric(8,3),
+    "highPrice" numeric(8,3),
+    "lowPrice" numeric(8,3),
+    "closePrice" numeric(8,3),
+    volume numeric(13,0),
+    dividend numeric(8,3),
+    "idShare" smallint NOT NULL
+) PARTITION BY RANGE ("time");
+
+-- PARTITION
+
+CREATE TABLE shares_prices_quots_2020 PARTITION OF shares_prices_quots_parent
+    FOR VALUES FROM ('2020-01-01 00:00:00') TO ('2021-01-01 00:00:00');
+
+CREATE TABLE shares_prices_quots_2021 PARTITION OF shares_prices_quots_parent
+    FOR VALUES FROM ('2021-01-01 00:00:00') TO ('2022-01-01 00:00:00');
+
+CREATE TABLE shares_prices_quots_2022 PARTITION OF shares_prices_quots_parent
+    FOR VALUES FROM ('2022-01-01 00:00:00') TO ('2023-01-01 00:00:00');
+
+CREATE TABLE shares_prices_quots_2023 PARTITION OF shares_prices_quots_parent
+    FOR VALUES FROM ('2023-01-01 00:00:00') TO ('2024-01-01 00:00:00');
+
+CREATE TABLE shares_prices_quots_2024 PARTITION OF shares_prices_quots_parent
+    FOR VALUES FROM ('2024-01-01 00:00:00') TO ('2025-01-01 00:00:00');
+
+CREATE TABLE shares_prices_quots_2025 PARTITION OF shares_prices_quots_parent
+    FOR VALUES FROM ('2025-01-01 00:00:00') TO ('2026-01-01 00:00:00');
+
+CREATE TABLE shares_prices_quots_2026 PARTITION OF shares_prices_quots_parent
+    FOR VALUES FROM ('2026-01-01 00:00:00') TO ('2027-01-01 00:00:00');
+
+CREATE TABLE shares_prices_quots_2027 PARTITION OF shares_prices_quots_parent
+    FOR VALUES FROM ('2027-01-01 00:00:00') TO ('2028-01-01 00:00:00');
+
+CREATE TABLE shares_prices_quots_2028 PARTITION OF shares_prices_quots_parent
+    FOR VALUES FROM ('2028-01-01 00:00:00') TO ('2029-01-01 00:00:00');
+
+CREATE TABLE shares_prices_quots_2029 PARTITION OF shares_prices_quots_parent
+    FOR VALUES FROM ('2029-01-01 00:00:00') TO ('2030-01-01 00:00:00');
+
+CREATE TABLE shares_prices_quots_2030 PARTITION OF shares_prices_quots_parent
+    FOR VALUES FROM ('2030-01-01 00:00:00') TO ('2031-01-01 00:00:00');
+	
+
+-- DEPLACEMENT	
+INSERT INTO shares_prices_quots_parent
+    SELECT * FROM public."sharesPricesQuots_parent";

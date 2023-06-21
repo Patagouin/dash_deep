@@ -7,6 +7,7 @@ import numpy as np
 import pytz
 import re
 from pandas.tseries.offsets import BDay
+
 #chatGPT
 #from sqlalchemy import create_engine
 
@@ -53,63 +54,51 @@ class SqlCom:
             self.connection.close()
 
 
-    def saveDataInDB(self, df, share, checkDuplicate=False, nbTry=1):
+    def saveDataInDB(self, df, shareObj, checkDuplicate=False, nbTry=1):
         ''' Save data (multiple lines) from a share in DB '''
-        nbAlreadySavedRow = 0
-        tmpRow = None
-        insert_query = ""
         try:
-            subQuery = f''' SELECT  "sharesInfos"."idShare" FROM "sharesInfos" WHERE "sharesInfos"."symbol"='{share.symbol}' '''
-            if checkDuplicate == False:
-                lastTime = None # Sometime same time with same share occurs
-                for row in df.itertuples():
-                    tmpRow = row
-                    if lastTime != row.Index:
-                        if row.Open == row.Open or row.High == row.High or row.Low == row.Low or row.Close == row.Close: # Detect if any nan value du to yahoo which give bad data
-                            insert_query += ( f' INSERT INTO public."sharesPricesQuots"('
-                                                    f' "time", "openPrice", "highPrice", "lowPrice", "closePrice", "volume", "dividend", "idShare") '
-                                                    f' VALUES (\'{row.Index}\', \'{row.Open}\', \'{row.High}\', \'{row.Low}\', \'{row.Close}\', \'{row.Volume}\', \'{row.Dividends}\', ({subQuery})); ' 
-                                                    )
+            nbAlreadySavedRow = 0
+            insert_query = ""
+            lastTime = None
 
-                    lastTime = row.Index
-                # Execute all requests at once
-                if (insert_query != ""):
-                    self.cursor.execute(insert_query)
-                    self.connection.commit()
-                
-                ut.logOperation(f'''Success: {share.symbol} saved successfully {df.shape[0]} row written''')
-            else:
-                for row in df.itertuples():
-                    tmpRow = row
-                    select_query_1 = f' SELECT COUNT(*) FROM "sharesPricesQuots" WHERE "time"=\'{row.Index}\' and "idShare"=({subQuery}) '
+            for row in df.itertuples():
+                if checkDuplicate:
+                    select_query_1 = f'SELECT COUNT(*) FROM "sharesPricesQuots" WHERE "time"=\'{row.Index}\' and "idShare"={shareObj.idShare}'
                     self.cursor.execute(select_query_1)
                     self.connection.commit()
                     data = self.cursor.fetchall()
                     if data[0][0] > 0:
                         nbAlreadySavedRow += 1
-                    else:
-                        if row.Open == row.Open or row.High == row.High or row.Low == row.Low or row.Close == row.Close: # NaN != NaN == False
-                            insert_query += ( f' INSERT INTO public."sharesPricesQuots"('
-                                                    f' "time", "openPrice", "highPrice", "lowPrice", "closePrice", "volume", "dividend", "idShare") '
-                                                    f' VALUES (\'{row.Index}\', \'{row.Open}\', \'{row.High}\', \'{row.Low}\', \'{row.Close}\', \'{row.Volume}\', \'{row.Dividends}\', ({subQuery})); ' 
-                                                    )
-                # Execute all requests at once
-                if (insert_query != ""):
-                    self.cursor.execute(insert_query)
-                    self.connection.commit()
+                        continue
 
-                ut.logOperation(f'''Success: {share.symbol} saved successfully new/total:{df.shape[0]-nbAlreadySavedRow}/{df.shape[0]}''')
+                if lastTime != row.Index:
+                    if row.Open == row.Open or row.High == row.High or row.Low == row.Low or row.Close == row.Close:  # Detect if any nan value due to yahoo which give bad data
+                        insert_query += ( f' INSERT INTO public."sharesPricesQuots"('
+                                            f' "time", "openPrice", "highPrice", "lowPrice", "closePrice", "volume", "dividend", "idShare") '
+                                            f' VALUES (\'{row.Index}\', \'{row.Open}\', \'{row.High}\', \'{row.Low}\', \'{row.Close}\', \'{row.Volume}\', \'{row.Dividends}\', {shareObj.idShare}); ' 
+                                            )
+                    lastTime = row.Index
+
+            # Execute all requests at once
+            if insert_query != "":
+                self.cursor.execute(insert_query)
+                self.connection.commit()
+
+            if checkDuplicate:
+                ut.logOperation(f'''Success: {shareObj.symbol} saved successfully new/total:{df.shape[0] - nbAlreadySavedRow}/{df.shape[0]}''')
+            else:
+                ut.logOperation(f'''Success: {shareObj.symbol} saved successfully {df.shape[0]} row written''')
 
         except (Exception, psycopg2.DatabaseError) as error :
             print ("Error while saving share: ", error)
             ut.logOperation(insert_query)
-            ut.logOperation("Error: {share.symbol} failed", listErrors=[error])
+            ut.logOperation("Error: {shareObj.symbol} failed", listErrors=[error])
             if (nbTry == 1):
                 nbTry += 1
                 print ("Retry by removing duplicates in retrieved quots")
                 ut.logOperation("Retry by removing duplicates in retrieved quots")
                 df = df.drop_duplicates()
-                saveDataInDB(df, share, checkDuplicate, nbTry)
+                self.saveDataInDB(df, shareObj, checkDuplicate, nbTry)
                 return 0
             exit (-1)
 
@@ -186,11 +175,12 @@ class SqlCom:
             self.cursor.execute(select_query)
             self.connection.commit()
             columns = [desc[0] for desc in self.cursor.description]
-            select_query = f''' SELECT "sharesInfos".* FROM "sharesInfos"'''
+            select_query = f''' SELECT "sharesInfos".* FROM "sharesInfos" '''
             if readOnlyThosetoUpdate:
-                select_query += f''' INNER JOIN "sharesStats" ON "sharesStats"."idShare"="sharesInfos"."idShare" where "isUpdated" != 'false' or "isUpdated" is NULL  '''
+                select_query += '''where "isUpdated" != 'false' or "isUpdated" is NULL'''
             dataFrame = pd.read_sql(select_query, self.connection, columns=columns)
-            self.sharesObj.setAllShares(dataFrame)
+            return dataFrame
+            #self.sharesObj.setAllShares(dataFrame)
         except (Exception, psycopg2.DatabaseError) as error :
             print (f"Error while getting shares infos: ", error)
 
@@ -277,7 +267,7 @@ class SqlCom:
         return data
 
     def updateInfoAllShares(self):
-        for shareObj in self.sharesObj.listShares.values():
+        for shareObj in self.sharesObj.dfShares.values():
             self.updateInfoShare(shareObj)
 
     # Function insert or update a column in table containing shares infos if a column not present add it
@@ -370,63 +360,106 @@ class SqlCom:
         except (Exception, psycopg2.DatabaseError) as error:
             print (f"Error while updating volume excess : ", error)
 
-    def computeNbRecordsAndAvgByDayAndFirstLastRecord(self, shareObj):
+    def computeNbRecordsAndAvgByDay(self, shareObj):
+        nbRecordsTotalAvgByDay = 0
+        nbRecordsAvgByDayOnLastMonth = 0
+        nbRecordsInTotal = 0
         try:
             select_query = f''' SELECT "time" FROM "sharesPricesQuots" WHERE "idShare"='{shareObj.idShare}' ORDER BY "time" ASC '''
             self.cursor.execute(select_query)
             self.connection.commit()
             data = self.cursor.fetchall()
-            dateFirst = dateLast = None
+            dateFirst = shareObj.firstRecord
+            dateLast = shareObj.lastRecord
             if data != []:
-                dateFirst = data[0][0] #First row, first column
-                dateLast = data[-1][0] #Last row, first column
+                #dateFirst = data[0][0] #First row, first column
+                #dateLast = data[-1][0] #Last row, first column
                 nbBusDayTotal = np.busday_count(dateFirst.date(), dateLast.date()) + 1 # +1 car bound are inclusive
-                nbRecordsTotal = len(data)
-                nbRecordsTotalAvgByDay = nbRecordsTotal/nbBusDayTotal
+                nbRecordsInTotal = len(data)
+                nbRecordsTotalAvgByDay = nbRecordsInTotal/nbBusDayTotal
                 data = list(list(zip(*data))[0]) # See https://stackoverflow.com/questions/12142133/how-to-get-first-element-in-a-list-of-tuples
                 index = pd.DatetimeIndex(data) 
                 data = pd.Series(data, index=index)
                 dataOnLastMonth = data[dateLast-datetime.timedelta(days=30):]
                 nbRecordsOnLastMonth = dataOnLastMonth.shape[0]
                 nbBusDayOnLastMonth = np.busday_count(dateLast.date()-datetime.timedelta(days=30), dateLast.date()) + 1
-                nbRecordsOnLastMonthAvgByDay = nbRecordsOnLastMonth/nbBusDayOnLastMonth
+                nbRecordsAvgByDayOnLastMonth = nbRecordsOnLastMonth/nbBusDayOnLastMonth
         except(Exception) as error:
             print (f"Error while compute stats on average records: ", error)
             exit(-1)
 
         try:
-            if (dateFirst == None or dateLast == None):
-                valuesString = f''' '0', '0', '0' ,NULL, NULL '''
-            else:
-                valuesString = f''' '{nbRecordsTotalAvgByDay}', '{nbRecordsOnLastMonthAvgByDay}', '{nbRecordsTotal}' ,'{dateFirst}', '{dateLast}' '''
-
-            insert_query = f''' INSERT INTO "sharesStats"("idShare", "nbRecordsAvgByDay", "nbRecordsAvgByDayOnLastMonth", "nbRecordsInTotal", "firstRecord", "lastRecord") \
-            VALUES ('{shareObj.idShare}', {valuesString}) \
-            ON CONFLICT("idShare") DO UPDATE SET ("nbRecordsAvgByDay", "nbRecordsAvgByDayOnLastMonth", "nbRecordsInTotal", "firstRecord", "lastRecord") = \
-            ({valuesString}) '''
-
+            insert_query = f'''UPDATE "sharesInfos" \
+            SET "nbRecordsTotalAvgByDay" = {nbRecordsTotalAvgByDay}, "nbRecordsAvgByDayOnLastMonth" = {nbRecordsAvgByDayOnLastMonth}, "nbRecordsInTotal" = {nbRecordsInTotal} \
+            WHERE "idShare" = '{shareObj.idShare}' '''
             self.cursor.execute(insert_query)
             self.connection.commit()
         except(Exception) as error:
             print (f"Error while saving stats on average records: ", error)
             exit(-1)
 
-    ## LastRecord est aussi compute par la fonction computeNbRecordsAndAvgByDayAndFirstLastRecord
-    def computeLastRecord(self, shareObj):
+
+
+    def getFirstRecord(self, shareObj):
+        try:
+            data = None
+            select_query = f''' SELECT "time" FROM "sharesPricesQuots" WHERE "idShare"='{shareObj.idShare}' ORDER BY "time" ASC LIMIT 1 '''
+            self.cursor.execute(select_query)
+            self.connection.commit()
+            data = self.cursor.fetchall()
+            if data != [] and data != None :
+                dateFirst = data[0][0] #dateFirst
+                return dateFirst
+
+        except(Exception) as error:
+            print (f"Error retrieving first record: ", error)
+            exit(-1)
+
+
+    def getLastRecord(self, shareObj):
         try:
             data = None
             select_query = f''' SELECT "time" FROM "sharesPricesQuots" WHERE "idShare"='{shareObj.idShare}' ORDER BY "time" DESC LIMIT 1 '''
             self.cursor.execute(select_query)
             self.connection.commit()
             data = self.cursor.fetchall()
-            if data != [] or data != None :
-                dateFirst = data[0][0] #LastRecord
-                update_query = f''' UPDATE "sharesStats" SET "lastRecord"='{dateFirst}' WHERE "idShare"='{shareObj.idShare}';\n '''
+            if data != [] and data != None :
+                dateLast = data[0][0] #LastRecord
+                return dateLast
+            return None
+
+        except(Exception) as error:
+            print (f"Error retrieving last record: ", error)
+            exit(-1)
+
+    ## LastRecord est aussi compute par la fonction computeNbRecordsAndAvgByDay
+    def computeLastRecord(self, shareObj, dateLast="ToCompute"):
+        try:
+            if dateLast == "ToCompute":
+                dateLast = self.getLastRecord(shareObj)
+
+            if dateLast != [] and dateLast != None :
+                update_query = f''' UPDATE "sharesInfos" SET "lastRecord"='{dateLast}' WHERE "idShare"='{shareObj.idShare}';\n '''
                 self.cursor.execute(update_query)
                 self.connection.commit()
 
         except(Exception) as error:
-            print (f"Error while saving stat lastRecord: ", error)
+            print (f"Error while saving info lastRecord err: ", error)
+            exit(-1)
+
+    # N'est pas à caculer à chaque maj des infos
+    def computeFirstRecord(self, shareObj, dateFirst="ToCompute"):
+        try:
+            if dateFirst == "ToCompute":
+                dateFirst = self.getFirstRecord(shareObj)
+
+            if dateFirst != [] and dateFirst != None :
+                update_query = f''' UPDATE "sharesInfos" SET "firstRecord"='{dateFirst}' WHERE "idShare"='{shareObj.idShare}';\n '''
+                self.cursor.execute(update_query)
+                self.connection.commit()
+
+        except(Exception) as error:
+            print (f"Error while saving info firstRecord err: ", error)
             exit(-1)
 
     def get_last_potential_date(self, shareObj):
@@ -447,7 +480,7 @@ class SqlCom:
             print(f"Error while fetching the last potential date: ", error)
             exit(-1)
 
-    def get_cotations_data(self, shareObj, start_date, end_date, column):
+    def get_cotations_data(self, shareObj, start_date, end_date, column="openPrice"):
         try:
             select_query = f'''SELECT "{column}", "time" FROM "sharesPricesQuots" WHERE "idShare"='{shareObj.idShare}' AND "time" >= '{start_date}' AND "time" <= '{end_date}' ORDER BY "time" ASC'''
             self.cursor.execute(select_query)
@@ -475,6 +508,31 @@ class SqlCom:
         except (Exception, psycopg2.DatabaseError) as error:
             print(f"Error while fetching cotations data: ", error)
             exit(-1)
+
+#semble pas valide
+    def get_cotations_data_df(self, shareObj, start_date, end_date):
+        try:
+            select_query = f'''SELECT * FROM "sharesPricesQuots" WHERE "idShare"='{shareObj.idShare}' AND "time" >= '{start_date}' AND "time" <= '{end_date}' ORDER BY "time" ASC'''
+            self.cursor.execute(select_query)
+            self.connection.commit()
+            data = self.cursor.fetchall()
+            column_names = [desc[0] for desc in self.cursor.description]
+
+            if data != [] and data is not None:
+                data_df = pd.DataFrame(data, columns=column_names)
+                data_df['time'] = pd.to_datetime(data_df['time'])
+                data_df.set_index('time', inplace=True)
+
+            else:
+                print(f"No data found for idShare '{shareObj.symbol}' ('{shareObj.idShare}') in the specified date range {start_date} and {end_date}")
+                data_df = pd.DataFrame()
+
+            return data_df
+
+        except Exception as e:
+            print(f"Erreur lors de l'extraction des données: {e}")
+            return pd.DataFrame()
+
 
     # Créer une requête pour récup' la dernière valeur de mise à jour potential dans sharesPotential
     # Itérer sur les jours ouvrable ou sur tout les jours (faire attention au timezone)
@@ -523,7 +581,7 @@ class SqlCom:
                         # pas besoin de tester null vu que Excluded reprend la valeur qu'on a voulu mettre donc null
                         insert_query += f''' "{str(potential_levels[i])}_time" = EXCLUDED."{str(potential_levels[i])}_time", "{str(potential_levels[i])}_percentTotal" = EXCLUDED."{str(potential_levels[i])}_percentTotal", "{str(potential_levels[i])}_percent" = EXCLUDED."{str(potential_levels[i])}_percent",'''
                     insert_query = insert_query.rstrip(',')
-               
+
                 
                     ## Do nothing  in case on conflict, ON CONFLICT("idShare", "date") DO UPDATE SET "potential"='{potential}' '''
                     self.cursor.execute(insert_query)
@@ -535,27 +593,170 @@ class SqlCom:
 
     # A revoir
     def discardUpdate(self, shareObj, nbRecordsMinByDay, nbDaysMax=30):
-        data = []
         try:
-            select_query = f''' SELECT "nbRecordsAvgByDayOnLastMonth", "lastRecord" FROM "sharesStats" WHERE "idShare"='{shareObj.idShare}' '''
+            nbRecordsAvgByDayOnLastMonth = shareObj.nbRecordsAvgByDayOnLastMonth
+            lastRecord =shareObj.lastRecord
+            if lastRecord != None:
+                result = 'false'
+                isLastQuotLessOlderThanAMonth = (lastRecord - datetime.datetime.now()) < datetime.timedelta(days=nbDaysMax)
+                if (nbRecordsAvgByDayOnLastMonth > nbRecordsMinByDay and isLastQuotLessOlderThanAMonth):
+                    result = 'true'
+                update_query = f''' UPDATE "sharesInfos" SET "isUpdated"='{result}' WHERE "idShare"='{shareObj.idShare}';\n '''
+                self.cursor.execute(update_query)
+                self.connection.commit()
+            else:
+                ut.logOperation(f"Pas de data pour {shareObj.symbol} ou lastRecord pas calculé")
+        except(Exception) as error:
+            print (f"Error while updating shares stats : ", error)
+            exit(-1)
+
+    def compute_frequence_cotation_via_graph(self, shareObj):
+        select_query = f'''SELECT "time" FROM "sharesPricesQuots" WHERE "idShare"='{shareObj.idShare}' '''
+        self.cursor.execute(select_query)
+        self.connection.commit()
+        data = self.cursor.fetchall()
+
+        # Calculez le nombre de jours ouvrés entre dateFirst et dateLast
+
+        if data != [] and data is not None:
+            data_df = pd.DataFrame(data, columns=['time'])
+            import matplotlib.pyplot as plt
+
+            data_df['time'] = pd.to_datetime(data_df['time'])
+            data_df['time_of_day'] = data_df['time'].dt.time
+
+
+            # Convertir les objets 'time' en secondes pour les utiliser dans un histogramme
+            def time_to_minutes(time_obj):
+                return time_obj.hour * 60 + time_obj.minute
+
+            data_df_copy = data_df.copy()
+            data_df_copy['time_minutes'] = data_df['time_of_day'].apply(time_to_minutes)
+
+            # Créer l'histogramme
+            plt.figure(figsize=(8, 6), dpi=200)
+
+            plt.hist(data_df_copy['time_minutes'], bins=range(0, 24*60, 1), edgecolor='black')
+            # Convertir les secondes en objets timedelta pour un affichage plus lisible
+            def minutes_to_timedelta(minutes):
+                return datetime.timedelta(minutes=minutes)
+
+            # Définir les positions et les labels personnalisés des graduations
+            xtick_minutes = range(0, 24*60, 60)  # Chaque heure
+            #xtick_labels = [minutes_to_timedelta(s) for s in xtick_minutes]
+            xtick_labels = [datetime.time(hour=int(m // 60), minute=int(m % 60)) for m in xtick_minutes]
+
+            plt.xticks(xtick_minutes, xtick_labels, rotation=45, ha='right')
+            plt.xlabel('Heure de la journée (minutes)')
+            plt.ylabel('Fréquence des cotations')
+            plt.title('Histogramme de la fréquence des cotations au cours d\'une journée')
+            plt.savefig(f'repartition_cotation_one_day/{shareObj.symbol}.png', bbox_inches='tight')
+
+
+
+    def compute_general_market_open_close_time(self, shareObj, min_duration=30, percentThreshold=30):
+        try:
+            dateFirst = shareObj.firstRecord;
+            dateLast = shareObj.lastRecord;
+
+            select_query = f'''SELECT "time" FROM "sharesPricesQuots" WHERE "idShare"='{shareObj.idShare}' '''
             self.cursor.execute(select_query)
             self.connection.commit()
             data = self.cursor.fetchall()
-            nbRecordsAvgByDayOnLastMonth = data[0][0]
-            lastRecord = data[0][1]
-        except(Exception) as error:
-            print (f"Error while retrieving shares stats: ", error)
-            exit(-1)
 
+            if data != [] and data is not None:
+
+                # Calculez le nombre de jours ouvrés entre dateFirst et dateLast
+                num_business_days = np.busday_count(dateFirst.date().isoformat(), dateLast.date().isoformat())
+
+                openRichMarketTime = None
+                closeRichMarketTime = None
+                data_df = pd.DataFrame(data, columns=['time'])
+
+                data_df['time'] = pd.to_datetime(data_df['time'])
+                data_df['time_of_day'] = data_df['time'].dt.time
+				
+                openMarketTimeExtended = data_df['time_of_day'].min()
+                closeMarketTimeExtended = data_df['time_of_day'].max()
+
+                openMarketTimeExtended = ut.round_time_to_nearest_minutes(openMarketTimeExtended, 10)
+                closeMarketTimeExtended = ut.round_time_to_nearest_minutes(closeMarketTimeExtended, 10)
+                
+                openMarketTime = openMarketTimeExtended
+                closeMarketTime = closeMarketTimeExtended
+                if openMarketTimeExtended == datetime.time(4, 00):
+                    if closeMarketTimeExtended == datetime.time(20, 00):
+                        openMarketTime = datetime.time(9, 30)
+                        closeMarketTime = datetime.time(16, 00)
+
+                else:
+                    if openMarketTimeExtended == datetime.time(9, 0):
+                        if closeMarketTimeExtended == datetime.time(17, 30):
+                            openMarketTime = datetime.time(9, 0)
+                            closeMarketTime = datetime.time(17, 30)
+
+                # Arrondir les objets 'time' à la minute la plus proche
+                data_df['minute_of_day'] = data_df['time'].dt.round('T').dt.time
+
+                # Grouper les données par 'minute_of_day' et compter le nombre de cotations pour chaque minute
+                minute_counts = data_df.groupby('minute_of_day').size().reset_index(name='count')
+                
+                threshold = num_business_days / (100/percentThreshold)
+
+                # Ajoutez une colonne pour indiquer si le nombre d'occurrences dépasse le seuil
+                minute_counts['above_threshold'] = (minute_counts['count'] > threshold).astype(int)
+
+                # Use rolling() and sum() to find periods of {min_duration} consecutive minutes above the threshold.
+                minute_counts['consecutive_above_threshold'] = minute_counts['above_threshold'].rolling(min_duration).sum()
+
+                # Check if there are any periods with at least {min_duration} consecutive minutes above the threshold.
+                if (minute_counts['consecutive_above_threshold'] == min_duration).any():
+
+                    first_minute_above_threshold_index = minute_counts.loc[minute_counts['consecutive_above_threshold'] >= min_duration].index[0]
+                    last_minute_above_threshold_index = minute_counts.loc[minute_counts['consecutive_above_threshold'] >= min_duration].index[-1]
+
+                    openRichMarketTime = minute_counts.loc[first_minute_above_threshold_index - (min_duration-1), 'minute_of_day']
+                    closeRichMarketTime = minute_counts.loc[last_minute_above_threshold_index, 'minute_of_day']
+
+                    openRichMarketTime = ut.round_time_to_nearest_minutes(openRichMarketTime, 10)
+                    closeRichMarketTime = ut.round_time_to_nearest_minutes(closeRichMarketTime, 10)
+
+
+                try:
+                    if dateLast != [] or dateLast != None :
+                        update_query = f''' UPDATE "sharesInfos" SET \
+                                                    "openMarketTime"='{openMarketTime}', \
+                                                    "closeMarketTime"='{closeMarketTime}', \
+                                                    "openMarketTimeExtended"='{openMarketTimeExtended}',
+                                                    "closeMarketTimeExtended"='{closeMarketTimeExtended}' ''' + \
+                                                   (f''', "openRichMarketTime"='{openRichMarketTime}' ''' if openRichMarketTime is not None else '') + \
+                                                   (f''', "closeRichMarketTime"='{closeRichMarketTime}' ''' if closeRichMarketTime is not None else '') + \
+                                                   f''' WHERE "idShare"='{shareObj.idShare}';\n '''
+                        self.cursor.execute(update_query)
+                        self.connection.commit()
+
+                except(Exception) as error:
+                    print (f"Error while saving stat the market times: ", error)
+                    exit(-1)
+
+            else:
+                ut.logOperation(f"No data found for idShare '{shareObj.symbol}' ('{shareObj.idShare}')")
+
+
+        except Exception as e:
+            print(f"Erreur lors de l'extraction des données: {e}")
+
+    def saveModel(self, shareObj, modelName, modelBin, trainScore, testScore):
         try:
-            result = 'false'
-            isLastQuotLessOlderThanAMonth = lastRecord-datetime.datetime.now() < datetime.timedelta(days=nbDaysMax)
-            if (nbRecordsAvgByDayOnLastMonth > nbRecordsMinByDay and isLastQuotLessOlderThanAMonth):
-                result = 'true'
-            update_query = f''' UPDATE "sharesStats" SET "l"='{result}' WHERE "idShare"='{shareObj.idShare}';\n '''
+            current_date = datetime.datetime.now
+            update_query = f'''INSERT INTO modelsDeepLearning ("id", "idShare", "model", "trainScore", "testScore", "date") 
+                            VALUES ('{modelName}', '{shareObj.idShare}', '{modelBin}', '{trainScore}', '{testScore}', '{current_date}' )
+                            ON CONFLICT ("id", "idShare", "model", "trainScore", "testScore", "date") 
+                            DO UPDATE
+                            SET "id" = EXCLUDED."id", "idShare" = EXCLUDED."idShare", "model" = EXCLUDED."model", "trainScore" = EXCLUDED."trainScore", "testScore" = EXCLUDED."testScore", "date" = EXCLUDED."date"'''
+
             self.cursor.execute(update_query)
             self.connection.commit()
-
         except(Exception) as error:
-            print (f"Error while updating shares stats : ", error)
+            print (f"Error while updating model: {modelName} pour {shareObj.symbol}: ", error)
             exit(-1)

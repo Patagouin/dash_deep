@@ -6,18 +6,19 @@ import re
 
 import Models.SqlCom as sq
 import Models.utils as ut
+import deepLearning.lstm as ls
 
 
 
 class Shares:
 
     def __init__(self, readOnlyThosetoUpdate=False):
-        self.listShares = pd.DataFrame()
+        self.dfShares = pd.DataFrame()
         self.__sqlObj = sq.SqlCom("postgres", "Rapide23$", "127.0.0.1", "5432", "stocksprices", self)
         self.readSharesInDB(readOnlyThosetoUpdate)
 
     def readSharesInDB(self, readOnlyThosetoUpdate=False):
-        self.__sqlObj.readSharesInfos(readOnlyThosetoUpdate)
+        self.dfShares = self.__sqlObj.readSharesInfos(readOnlyThosetoUpdate)
 
     def addTickersInfoFromFile(self, listSharesFileName):
         listSharesToAdd = self.readListSharesFromFile(listSharesFileName, withMarketAtEndTicker=False)
@@ -35,9 +36,9 @@ class Shares:
 
     def updateAllSharesInfos(self):
         #start = False
-        nbTotalShares =  self.listShares.shape[1] #Column
+        nbTotalShares =  self.dfShares.shape[1] #Column
         nbSharesTryUpdated = 0
-        for curShare in self.listShares.itertuples():
+        for curShare in self.dfShares.itertuples():
                 #if curShare.tickerName == 'MRK.PA':
                 #    start = True
                 #if start:
@@ -82,13 +83,13 @@ class Shares:
 
 
     def getAllShares(self):
-         return self.listShares
+         return self.dfShares
    
     def updateAllSharesCotation(self, checkDuplicate=False):
         #start = False
-        nbTotalShares =  self.listShares.shape[0]
+        nbTotalShares =  self.dfShares.shape[0]
         nbSharesUpdated = 0
-        for curShare in self.listShares.itertuples():
+        for curShare in self.dfShares.itertuples():
             #if curShare.symbol == "AOS":
             #    start = True
             #else:
@@ -101,15 +102,42 @@ class Shares:
 
         ut.logOperation("Success: All shares cotation updated")
 
+    def updateAllSharesModels(self, df=None):
+        if (df == None):
+            workingDf = self.dfShares
+        else:
+            workingDf = df
+
+        for curShare in workingDf.itertuples():
+            # Si l'heure de curShare.lastRecord est inférieure à l'heure de curShare.closeRichMarketTime
+            if curShare.lastRecord.time() < curShare.closeRichMarketTime.time():
+                # Change le jour pour jour n-1
+                end_date = curShare.lastRecord - datetime.timedelta(days=1)
+                # Maintient l'heure à curShare.closeRichMarketTime
+                end_date = end_date.replace(hour=curShare.closeRichMarketTime.hour, minute=curShare.closeRichMarketTime.minute, second=curShare.closeRichMarketTime.second)
+                data_quots = self.get_cotations_data_df(curShare, curShare.firstRecord, end_date)
+            else:
+                end_date = curShare.lastRecord
+
+            data_quots = self.get_cotations_data_df(curShare, curShare.firstRecord, end_date)
+
+            model, trainScore, testScore = ls.test_lstm(curShare, data_quots)
+            model.save("model.h5")
+            with open("model.h5", "rb") as file:
+                model_binary = file.read()
+            self.__sqlObj.saveModel(curShare, model, trainScore, testScore)
+
+
     def updateShareCotations(self, shareObj, checkDuplicate=False):
         if not checkDuplicate:
-            lastQuotDate = self.__sqlObj.getLastDateQuot(shareObj)
+            lastQuotDate = shareObj.lastRecord # self.__sqlObj.getLastDateQuot(shareObj)
         else:
             lastQuotDate = 'max'
         df = self.__sqlObj.downloadDataInDB(shareObj, dateBegin=lastQuotDate, dateEnd='now')
         df = df[1:]
         self.__sqlObj.saveDataInDB(df, shareObj, checkDuplicate)
-        
+        self.__sqlObj.computeLastRecord(shareObj)
+
         ut.logOperation(f"Shares: {shareObj.symbol} updated")
 
     def updateSharesFromDataFrame(self, dfShare):
@@ -117,31 +145,47 @@ class Shares:
             self.updateShare(share)
 
 
-    def getRowsByKeysValues(self, keys, values, op='&', comp_op='==', df=None):
-        ''' type=['union'|'&'] if union each catched properties are added to list otherwise list is created when all properties are satisfied '''
-        ''' If df != pd.DataFrame instead of self.listShare df is taken as dataframe input '''
+    def getRowsDfByKeysValues(self, keys, values, op='&', comp_op='==', df=None):
+        '''
+        Get rows of a Pandas DataFrame that match given key-value pairs.
+
+        @param keys: list of column names in the DataFrame to search on.
+        @type keys: list or str
+        @param values: list of values to match for each key, in the same order as keys.
+        @type values: list or str
+        @param op: type of logical operation to use to combine the search criteria. Can be 'union' or '&'. Default is '&'.
+        @type op: str
+        @param comp_op: comparison operator to use for each search criterion. Default is '=='.
+        @type comp_op: str
+        @param df: optional Pandas DataFrame to search on. If not provided, uses self.dfShares.
+        @type df: pandas.DataFrame
+        @return: a Pandas DataFrame containing the matching rows.
+        @rtype: pandas.DataFrame
+        '''
         if type(keys) is not list:
             keys=[keys]
         if type(values) is not list:
             values=[values]
-        for i in range(len(values)):
-            values[i] = str(values[i])
-            if values[i].replace('.', '', 1).isdigit() == False:
-                values[i]= f'\'{values[i]}\''
-        if type(df) == pd.DataFrame:
-            workingDf=df
-        else:
-            workingDf=self.listShares
+        if (values != [] and keys != []):
+            for i in range(len(values)):
+                values[i] = str(values[i])
+                if values[i].replace('.', '', 1).isdigit() == False:
+                    values[i]= f'\'{values[i]}\''
+            if type(df) == pd.DataFrame:
+                workingDf=df
+            else:
+                workingDf=self.dfShares
          
-        expr=''
-        for key, value in zip(keys,values):
-            expr += f''' (workingDf.{key} {comp_op} {value}) '''
-            expr += op
-        expr = expr[:-1]
+            expr=''
+            for key, value in zip(keys,values):
+                expr += f''' (workingDf.{key} {comp_op} {value}) '''
+                expr += op
+            expr = expr[:-1]
 
-        return workingDf[eval(expr)].drop_duplicates()
+            return workingDf[eval(expr)].drop_duplicates()
+        return pd.DataFrame()
 
-    def getListDfDataFromDf(self, dfShare, dateBegin, dateEnd):
+    def getListDfDataFromDfShares(self, dfShare, dateBegin, dateEnd):
         listDfData = []
         for row in dfShare.itertuples():
             listDfData.append(self.getDfDataRangeFromShare(row, dateBegin, dateEnd))
@@ -154,10 +198,10 @@ class Shares:
         return self.__sqlObj.getQuots(share, dateBegin, dateEnd)
 
     def addShare(self, ticker):
-        self.listShares[ticker] = ticker
+        self.dfShares[ticker] = ticker
 
     def setAllShares(self, dataframe):
-        self.listShares = dataframe
+        self.dfShares = dataframe
 
     # Return the list of ticker in array
     def readListSharesFromFile(self, listSharesFileName, withMarketAtEndTicker=True):
@@ -191,36 +235,34 @@ class Shares:
 #        listDateAndTickerName = self.__sqlObj.updateVolumeExcess(newVolumeByDateAndTickerName)
 
     def getShareBySymbol(self, tickerName):
-        data = self.getRowsByKeysValues("symbol", tickerName)
+        data = self.getRowsDfByKeysValues("symbol", tickerName)
         return data
 
-    def computeStatsForAllShares(self, *methods):
-                #start = False
-        nbTotalShares =  self.listShares.shape[0]
+    def computeStatsForAllShares(self, *methods, df=None):
+        if (df == None):
+            workingDf = self.dfShares
+        else:
+            workingDf = df
+        nbTotalShares =  workingDf.shape[0]
         for method in methods:
             ut.logOperation(f"{method.__name__} for all shares")
             nbSharesUpdated = 0
-            for curShare in self.listShares.itertuples():
+            for curShare in workingDf.itertuples():
                 method(curShare)
                 nbSharesUpdated += 1
                 ut.logOperation(f"{curShare.symbol} stats updated: {nbSharesUpdated}/{nbTotalShares}")
 
         ut.logOperation("Success: All shares stats updated")
 
-    def computeAllStats(self, shareObj):
-        self.__sqlObj.computeNbRecordsAndAvgByDayAndFirstLastRecord(shareObj)
-        nbRecordsMinByDay = 100
-        self.__sqlObj.discardUpdate(shareObj, nbRecordsMinByDay)
 
-    def computeNbRecordsAndAvgByDayAndFirstLastRecord(self, shareObj):
-        self.__sqlObj.computeNbRecordsAndAvgByDayAndFirstLastRecord(shareObj)
+    def computeNbRecordsAndAvgByDay(self, shareObj):
+        self.__sqlObj.computeNbRecordsAndAvgByDay(shareObj)
 
+    def computeFirstRecord(self, shareObj):
+        self.__sqlObj.computeFirstRecord(shareObj)
 
     def computeLastRecord(self, shareObj):
         self.__sqlObj.computeLastRecord(shareObj)
-
-    def computeAvgMaxRangeByDay(self, shareObj):
-        self.__sqlObj.computeAvgMaxRangeByDay(shareObj)
 
     def computePotential(self, shareObj):
         self.__sqlObj.computePotential(shareObj)
@@ -228,3 +270,10 @@ class Shares:
     def computeIsToUpdate(self, shareObj):
         nbRecordsMinByDay = 100
         self.__sqlObj.discardUpdate(shareObj, nbRecordsMinByDay)
+
+    def computeOpenCloseMarketTime(self, shareObj):
+        nbRecordsMinByDay = 100
+        self.__sqlObj.compute_general_market_open_close_time(shareObj)
+
+    def get_cotations_data_df(self, shareObj, start_date, end_date):
+        return self.__sqlObj.get_cotations_data_df(shareObj, start_date, end_date)

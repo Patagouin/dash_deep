@@ -1,10 +1,8 @@
 import datetime
 import matplotlib.pyplot as plt
 import pandas as pd
-import psycopg2
 import yfinance as yf
 import pytz
-import seaborn
 import numpy as np
 from collections import OrderedDict
 
@@ -162,7 +160,6 @@ def assembleDataFramesByColumn(listDfData, column, dfShare=pd.DataFrame(), listN
             dfOut[f'{dfShare.tickerName.iloc[cpt]}'] = curDf_interpolated[column]
         cpt += 1
 
-
     return dfOut
 
 def fillMissingValueDf(df, method='ffill'):
@@ -190,28 +187,6 @@ def prepareDf(df, method='ffill'):
 def splitDataByDays(df):
     df = df.resample('1D')
     return df
-
-
-#def assembleDataFramesByColumn(listDfData, column, dfShare=pd.DataFrame(), listNames=None):
-#    #
-#    minIndexShared = listDfData[0].index.min()
-#    maxIndexShared = listDfData[0].index.max()
-#    dfOut = pd.DataFrame()
-#    cpt=0
-#    for i, curDf in enumerate(listDfData):
-#        minIndexShared = max(minIndexShared, curDf.index.min())
-#        maxIndexShared = min(maxIndexShared, curDf.index.max())
-#        curDf_reindexed = curDf.reindex(pd.date_range(start=minIndexShared,
-#                                                end=maxIndexShared,
-#                                                freq='1min'))
-#        curDf_interpolated = curDf_reindexed.interpolate(method='linear')
-#        if listNames != None:
-#            dfOut[f'{listNames[i]}'] = curDf_interpolated[column]
-#        else:
-#            dfOut[f'{dfShare.tickerName.iloc[cpt]}'] = curDf_interpolated[column]
-#        cpt += 1
-
-#    return dfOut
 
         
 def printDfInFile(fileName, df):
@@ -744,3 +719,54 @@ def getPotential(npArrayObj,k):
                 firstElementNotDeleted = npArrayOfRange[indexOfWeakestRange][iNext]
 
     return resultIndex, resultPercent, resultPercentTotal
+
+def round_time_to_nearest_minutes(time_obj, minutes=5):
+    delta = datetime.timedelta(minutes=minutes)
+    as_seconds = time_obj.hour * 3600 + time_obj.minute * 60 + time_obj.second
+    rounded_seconds = round(as_seconds / delta.total_seconds()) * delta.total_seconds()
+    return datetime.time(hour=int(rounded_seconds // 3600),
+                            minute=int((rounded_seconds % 3600) // 60),
+                            second=int(rounded_seconds % 60))
+
+
+
+def filter_and_interpolate(group, open_time, close_time):
+    if group.empty:
+        return pd.DataFrame()
+
+    # Check if there are any values between open_time and open_time + 1 hour
+    open_time_td = pd.to_timedelta(str(open_time))
+    open_time_plus_1_hour_td = open_time_td + pd.Timedelta(hours=1)
+    open_time_plus_1_hour = (pd.Timestamp(0) + open_time_plus_1_hour_td).time()
+    data_in_range = group.between_time(open_time, open_time_plus_1_hour)
+
+    if data_in_range.empty:
+        return pd.DataFrame()
+
+
+    # Create a date_range with the open_time and close_time
+    date_range = pd.date_range(group.index[0].normalize() + pd.to_timedelta(str(open_time)),
+                               group.index[-1].normalize() + pd.to_timedelta(str(close_time)),
+                               freq='1T')
+
+    # Reindex the group with the new date_range, forward-fill and backward-fill missing values
+    group = group.reindex(date_range).fillna(method='ffill').fillna(method='bfill')
+
+    # Interpolate the data using linear method
+    data_df = group.interpolate(method='linear')
+
+    # Keep only data between open_time and close_time
+    data_df = data_df.between_time(open_time, close_time)
+
+    return data_df
+
+def prepareData(shareObj, data_df, columns=['openPrice']):
+    data_df = data_df.loc[:, columns]
+    for column in columns:
+        data_df[column] = pd.to_numeric(data_df[column], errors='coerce')
+    grouped = data_df.groupby(pd.Grouper(freq='D'))
+    filtered = grouped.apply(filter_and_interpolate, open_time=shareObj.openRichMarketTime, close_time=shareObj.closeRichMarketTime) # openRichMarketTime & closeRichMarketTime 
+
+    # Remove empty groups
+    #filtered = filtered.loc[~filtered.index.to_series().apply(lambda x: filtered.loc[x].empty)]
+    return filtered

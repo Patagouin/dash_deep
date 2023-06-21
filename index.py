@@ -3,7 +3,7 @@ import dash_html_components as html
 from dash.dependencies import Input, Output
 
 from appMain import app
-from apps import dashboard, update, app2
+from apps import dashboard, update, prediction #update#, prediction
 
 
 app.layout = html.Div([
@@ -18,7 +18,7 @@ def display_page(pathname):
         return dashboard.layout
     elif pathname == '/update':
         return update.layout
-    elif pathname == '/apps/app2':
-        return app2.layout
+    elif pathname == '/prediction':
+        return prediction.layout
     else:
         return '404'

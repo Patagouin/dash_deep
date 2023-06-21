@@ -14,7 +14,7 @@ dateLast = datetime.datetime.fromisoformat("2022-03-05 00:00:00+00:00")
 
 #shM = sm.Shares(readOnlyThosetoUpdate=True)
 #df = shM.getRowsByKeysValues(['symbol'],['CAP.PA'])
-#shM.getDfDataRangeFromShare(shM.listShares['CAP.PA'],dateBegin,dateLast)
+#shM.getDfDataRangeFromShare(shM.dfShares['CAP.PA'],dateBegin,dateLast)
 #print(f"Time: {time.time()-t}s")
 
 import yfinance as yf
