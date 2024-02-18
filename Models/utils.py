@@ -8,7 +8,7 @@ from collections import OrderedDict
 
 logType = {"Success":0, "Warning":1, "Error":2}
 
-nbSecondsInWeek = 604800
+nbSecondsInWeek = 604800 - 3600 # Par rapport au chgt d'heure (heure d'été heure d'hiver)
 
 memoryLog = dict()
 lastMemoryLog = ""

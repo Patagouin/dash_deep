@@ -110,7 +110,7 @@ class Shares:
 
         for curShare in workingDf.itertuples():
             # Si l'heure de curShare.lastRecord est inférieure à l'heure de curShare.closeRichMarketTime
-            if curShare.lastRecord.time() < curShare.closeRichMarketTime.time():
+            if curShare.lastRecord.time() < curShare.closeRichMarketTime:
                 # Change le jour pour jour n-1
                 end_date = curShare.lastRecord - datetime.timedelta(days=1)
                 # Maintient l'heure à curShare.closeRichMarketTime

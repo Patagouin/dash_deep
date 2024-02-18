@@ -72,10 +72,10 @@ class SqlCom:
                         continue
 
                 if lastTime != row.Index:
-                    if row.Open == row.Open or row.High == row.High or row.Low == row.Low or row.Close == row.Close:  # Detect if any nan value due to yahoo which give bad data
+                    if row.Open == row.Open:  # Detect if any nan value due to yahoo which give bad data
                         insert_query += ( f' INSERT INTO public."sharesPricesQuots"('
-                                            f' "time", "openPrice", "highPrice", "lowPrice", "closePrice", "volume", "dividend", "idShare") '
-                                            f' VALUES (\'{row.Index}\', \'{row.Open}\', \'{row.High}\', \'{row.Low}\', \'{row.Close}\', \'{row.Volume}\', \'{row.Dividends}\', {shareObj.idShare}); ' 
+                                            f' "time", "openPrice", "volume", "dividend", "idShare") '
+                                            f' VALUES (\'{row.Index}\', \'{row.Open}\', \'{row.Volume}\', \'{row.Dividends}\', {shareObj.idShare}); ' 
                                             )
                     lastTime = row.Index
 
@@ -159,7 +159,7 @@ class SqlCom:
             self.connection.commit()
             columns = [desc[0] for desc in self.cursor.description]
             sub_query = f'''SELECT "idShare" FROM "sharesInfos" where "symbol"='{shareObj.symbol}' '''
-            select_query =f'''SELECT "time", "openPrice", "highPrice", "lowPrice", "closePrice", "volume", "dividend" FROM "sharesPricesQuots" WHERE "idShare"= ({sub_query}) and "time" >= '{dateBegin}' and "time" < '{dateEnd}' ORDER BY "time" '''
+            select_query =f'''SELECT "time", "openPrice", "volume", "dividend" FROM "sharesPricesQuots" WHERE "idShare"= ({sub_query}) and "time" >= '{dateBegin}' and "time" < '{dateEnd}' ORDER BY "time" '''
             dataFrame = pd.read_sql(select_query, self.connection, index_col=["time"], parse_dates=["time"], columns=columns)
 
         except (Exception, psycopg2.DatabaseError) as error :
@@ -187,7 +187,8 @@ class SqlCom:
     def downloadDataInDB(self, share, dateBegin='max', dateEnd='now'): # Until now
         
         df = ut.downloadDataFromYahoo(share, dateBegin, dateEnd)
-        ut.logOperation(f"Success {share.symbol} downloaded from {dateBegin} until {dateEnd}", nbRowsWritten=df.shape[0])
+        last_date_time = df.index[-1].strftime('%Y-%m-%d %H:%M:%S') if not df.empty else dateEnd
+        ut.logOperation(f"Success {share.symbol} downloaded from {dateBegin} until {last_date_time}", nbRowsWritten=df.shape[0])
         return df
 
     def createInfoColumn(self, shareName):

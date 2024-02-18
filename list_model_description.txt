@@ -1,0 +1,22 @@
+
+model 1:
+	dataset:
+		train:
+			look back = 60 (minutes)
+		test:
+			1 cotation après 60 minutes du dernier element de mon train
+		donc train = ds[0:60] ; test  = ds[120]
+		on évite les transitions entre les jours  if (i//nb_quots_by_day ==  (i+2*look_back)//nb_quots_by_day )
+		
+		etendu cotation : closeRichMarketTime
+		type cotation : openPrice seul
+		train size: nb_days_quots_total//10
+		on ne prend qu'a partir de 9/10 
+		
+	couche: 1 LSTM puis dense (1)
+	unites neuron : 60 (=look back)
+	corr error: mse, optim: adam
+	epoch = 20
+	scaler : MinMaxScaler(feature_range=(0, 1))
+	seed : np.random.seed(42)
+	
