@@ -8,7 +8,7 @@ from collections import OrderedDict
 
 logType = {"Success":0, "Warning":1, "Error":2}
 
-nbSecondsInWeek = 604800 - 3600 # Par rapport au chgt d'heure (heure d'été heure d'hiver)
+nbSecondsInWeek = 604800 - 3600 # Par rapport au chgt d'heure (heure d'ï¿½tï¿½ heure d'hiver)
 
 memoryLog = dict()
 lastMemoryLog = ""
@@ -392,7 +392,7 @@ def getAllGrowingRange(array):
     isGrowing = False
     indexStart = 0 # declaration valeur d'initialisation n'a pas d'importance
     while (curI < len(array)):
-        # Cas d'un début de range croissant
+        # Cas d'un dï¿½but de range croissant
         if (not isGrowing and array[curI] >= array[curI-1]):
             indexStart = curI-1
             isGrowing = True
@@ -400,10 +400,10 @@ def getAllGrowingRange(array):
         elif (isGrowing and array[curI] < array[curI-1]):
             outArray += [[ indexStart, array[indexStart], curI-1, array[curI-1] ]]
             isGrowing = False
-        # Cas d'une continuité de range croissant
+        # Cas d'une continuitï¿½ de range croissant
         #elif (isGrowing and array[curI] >= array[curI-1]):
             #pass
-        # Cas d'une continuité de range non croissant
+        # Cas d'une continuitï¿½ de range non croissant
         #elif (not isGrowing and array[curI] < array[curI-1]):
             #pass
         curI += 1
@@ -523,19 +523,19 @@ class dicoSortedValue:
 # Sortie : res = [k=1 [indexA, indexB], k=2 [indexA, indexB]]
 def getPotential(npArrayObj,k):
     # corrige moi la ligne ci dessiys
-    indA = 0 # Indice début range
-    valA = 1 # Valeur début range
+    indA = 0 # Indice dï¿½but range
+    valA = 1 # Valeur dï¿½but range
     indB = 2 # Indice fin range
     valB = 3 # Valeur fin range
-    diff = 4 # Différence entre les deux valeurs
-    iBMerge = 5 # Si le range peut être mergé avec le suivant -1 si supprimé, 0 si pas mergé, 1 si mergé
-    iBefore = 6 # Indice du précédent
+    diff = 4 # Diffï¿½rence entre les deux valeurs
+    iBMerge = 5 # Si le range peut ï¿½tre mergï¿½ avec le suivant -1 si supprimï¿½, 0 si pas mergï¿½, 1 si mergï¿½
+    iBefore = 6 # Indice du prï¿½cï¿½dent
     iNext = 7 # Indice du suivant
-    iKey = 8 # clef faisant la liaison avec la structure qui est trié
+    iKey = 8 # clef faisant la liaison avec la structure qui est triï¿½
 
     k = sorted(k, reverse=True)
     # k = sort(k) pour petite optimisation on le fait pas
-    # 1/ Récupére une liste de tout les ranges croissants
+    # 1/ Rï¿½cupï¿½re une liste de tout les ranges croissants
     npArrayOfRange = getAllGrowingRange(npArrayObj)
 
     # Example: result = [[0,1,1,3],[2,2,3,5],[4,2,5,4]]
@@ -562,15 +562,15 @@ def getPotential(npArrayObj,k):
 
     # Example: result = [[0,1,1,3, diff:1,type:1,iMerge:1],[2,2,3,5, diff:3,type:0,iMerge:-1],[4,2,iBMerge,4, diff:2,type:0,iMerge:-1]]
 
-    #Lorsque vous itérez sur sorted_list en utilisant enumerate, chaque élément renvoyé par enumerate 
+    #Lorsque vous itï¿½rez sur sorted_list en utilisant enumerate, chaque ï¿½lï¿½ment renvoyï¿½ par enumerate 
     #est un tuple contenant l'index et la valeur correspondante dans la liste d'origine. 
-    #Dans ce cas, nous sommes uniquement intéressés par l'index, donc nous l'affectons à la variable i et 
+    #Dans ce cas, nous sommes uniquement intï¿½ressï¿½s par l'index, donc nous l'affectons ï¿½ la variable i et 
     #nous ignorons la valeur correspondante en utilisant '_'.
     sorted_list = sorted(enumerate(npArrayOfRange), key=lambda x: x[1][diff])
     indexSortedArray = [i for i, _ in sorted_list]
     # resIndexSorted [0,2,1]
 
-    uniqueKey = -1 # negatif pour ne pas confondre avec l'index dans la structure dico ordonné
+    uniqueKey = -1 # negatif pour ne pas confondre avec l'index dans la structure dico ordonnï¿½
 
     # Initial - desynchronized list and dico but get the already sorted np array
     listTmp = []
@@ -591,11 +591,11 @@ def getPotential(npArrayObj,k):
     resultPercent = []
     resultPercentTotal = []
     curK = 0
-    # Créer moi un tableau de 5 entiers
+    # Crï¿½er moi un tableau de 5 entiers
     
     while dicoIndexSorted.getSize() >= k[-1] and dicoIndexSorted.getSize() > 0:
 
-        # Si on n'en a pas trouve suffisemment au début
+        # Si on n'en a pas trouve suffisemment au dï¿½but
         while dicoIndexSorted.getSize() < k[curK] : # and dicoIndexSorted.getSize() > 0 tester deja plus haut
             curK += 1
             resultIndex += [[]]
@@ -627,9 +627,9 @@ def getPotential(npArrayObj,k):
             npArrayOfRange[indexOfWeakestRange][indB] = npArrayOfRange[indexRangeToMerge][indB] # Copy indexB
             npArrayOfRange[indexOfWeakestRange][valB] = npArrayOfRange[indexRangeToMerge][valB] # Copy valueB
             # Si le range etait un range de merge
-            nextRangeBis = npArrayOfRange[indexRangeToMerge][iNext] # On regarde quel était le prochain
-            # si celui qu'on va supprimer pour cause de merge n'était pas mergeable notre range courant peut 
-            # le devenir car on part de plus "bas" (indexA est plus faible que l'était le range de droite avant fusion)
+            nextRangeBis = npArrayOfRange[indexRangeToMerge][iNext] # On regarde quel ï¿½tait le prochain
+            # si celui qu'on va supprimer pour cause de merge n'ï¿½tait pas mergeable notre range courant peut 
+            # le devenir car on part de plus "bas" (indexA est plus faible que l'ï¿½tait le range de droite avant fusion)
             if npArrayOfRange[indexRangeToMerge][iBMerge] != 1: 
                 if (nextRangeBis!= -1 and (npArrayOfRange[nextRangeBis][valA] > npArrayOfRange[indexOfWeakestRange][valA]) and (npArrayOfRange[nextRangeBis][valB] > npArrayOfRange[indexOfWeakestRange][valB])): # Forcement np[indexOfWeakestRange][valB] > np[nextRangeBis][valA] 
                     npArrayOfRange[indexOfWeakestRange][iBMerge] = 1 # continue a etre mergeable
@@ -638,7 +638,7 @@ def getPotential(npArrayObj,k):
                 else:
                     npArrayOfRange[indexOfWeakestRange][iBMerge] = 0 # n'est plus mergeable
                     npArrayOfRange[indexOfWeakestRange][diff] = npArrayOfRange[indexOfWeakestRange][valB] / npArrayOfRange[indexOfWeakestRange][valA] # calcul nouvel ecart normal
-            else: # Si le range était mergeable on le reste mais avec un nouveau calcul
+            else: # Si le range ï¿½tait mergeable on le reste mais avec un nouveau calcul
                 valDiff = ( (npArrayOfRange[indexOfWeakestRange][valB] / npArrayOfRange[indexOfWeakestRange][valA])  + (npArrayOfRange[nextRangeBis][valB] / npArrayOfRange[nextRangeBis][valA]) ) - (npArrayOfRange[nextRangeBis][valB] / npArrayOfRange[indexOfWeakestRange][valA])
                 npArrayOfRange[indexOfWeakestRange][diff] = valDiff # continue a etre mergeable ecart de merge
 
@@ -648,29 +648,29 @@ def getPotential(npArrayObj,k):
                 if ( (npArrayOfRange[indexOfWeakestRange][valA] > npArrayOfRange[beforeRange][valA]) and (npArrayOfRange[indexOfWeakestRange][valB] > npArrayOfRange[beforeRange][valB]) ):
                     npArrayOfRange[beforeRange][iBMerge] = 1 # continue a etre mergeable
                     npArrayOfRange[beforeRange][diff] = ( (npArrayOfRange[beforeRange][valB] / npArrayOfRange[beforeRange][valA])  + (npArrayOfRange[indexOfWeakestRange][valB] / npArrayOfRange[indexOfWeakestRange][valA]) ) - (npArrayOfRange[indexOfWeakestRange][valB] / npArrayOfRange[beforeRange][valA])
-                    # on supprime l'element d'avant qui est mergeable et qui a changé de valeur 
+                    # on supprime l'element d'avant qui est mergeable et qui a changï¿½ de valeur 
                     clefIndexMergeDelete = npArrayOfRange[beforeRange][iKey]
                     dicoIndexSorted.removeByKey(clefIndexMergeDelete)
                     # On le remet au bon endroit
                     # Il ne doit pas changer de key
                     dicoIndexSorted.add(clefIndexMergeDelete, (beforeRange, npArrayOfRange[beforeRange][diff]))
                 
-            npArrayOfRange[indexOfWeakestRange][iNext] = nextRangeBis # index du prochain élement
+            npArrayOfRange[indexOfWeakestRange][iNext] = nextRangeBis # index du prochain ï¿½lement
             if nextRangeBis >= 0:
-                npArrayOfRange[nextRangeBis][iBefore] = indexOfWeakestRange # index du précédent element sur le prochain element mergeable
+                npArrayOfRange[nextRangeBis][iBefore] = indexOfWeakestRange # index du prï¿½cï¿½dent element sur le prochain element mergeable
 
 
 
 
-            # Il reste le calcul de la clef et l'entretien du tableau trié
-            # on supprime le premier element trié (par index)
+            # Il reste le calcul de la clef et l'entretien du tableau triï¿½
+            # on supprime le premier element triï¿½ (par index)
             dicoIndexSorted.removeByKey(key)
 
-            # on supprime l'element qui a été mergé cas unique du merge (par clef)
+            # on supprime l'element qui a ï¿½tï¿½ mergï¿½ cas unique du merge (par clef)
             clefIndexMergeDelete = npArrayOfRange[indexRangeToMerge][iKey]
             dicoIndexSorted.removeByKey(clefIndexMergeDelete)
 
-            # On ajoute le nouvel element fusionné
+            # On ajoute le nouvel element fusionnï¿½
             dicoIndexSorted.add(uniqueKey, (indexOfWeakestRange, npArrayOfRange[indexOfWeakestRange][diff]))
 
             npArrayOfRange[indexOfWeakestRange][iKey] = uniqueKey # on associe la clef de l'index a ce tableau
@@ -680,24 +680,24 @@ def getPotential(npArrayObj,k):
 
 
         else: # Delete
-            # Changer l'index du suivant du précédent
+            # Changer l'index du suivant du prï¿½cï¿½dent
             # on saute l'element supprime
             indexPrevious = npArrayOfRange[indexOfWeakestRange][iBefore]
             indexNext = npArrayOfRange[indexOfWeakestRange][iNext]
             # on maj pour le prochain range l'index avant qui dois sauter celui qu'on vient de supprimer
             if indexNext >= 0:
                 npArrayOfRange[indexNext][iBefore] = npArrayOfRange[indexOfWeakestRange][iBefore]
-            #on maj le précédent qui doit sauter celui qu'on vient de supprimer
+            #on maj le prï¿½cï¿½dent qui doit sauter celui qu'on vient de supprimer
             if indexPrevious >= 0:
                 npArrayOfRange[indexPrevious][iNext] = npArrayOfRange[indexOfWeakestRange][iNext]
-                # Pour le précédent sa mergeabilité peut changer
+                # Pour le prï¿½cï¿½dent sa mergeabilitï¿½ peut changer
                 if npArrayOfRange[indexNext][iBMerge] != -1: # Si pas supprimer
                     if (indexNext!= -1 and (npArrayOfRange[indexNext][valA] > npArrayOfRange[indexPrevious][valA]) and (npArrayOfRange[indexNext][valB] > npArrayOfRange[indexPrevious][valB])):
                         npArrayOfRange[indexPrevious][iBMerge] = 1 #  est mergeable
                         valDiff = ( (npArrayOfRange[indexPrevious][valB] / npArrayOfRange[indexPrevious][valA])  + (npArrayOfRange[indexNext][valB] / npArrayOfRange[indexNext][valA]) ) - (npArrayOfRange[indexNext][valB] / npArrayOfRange[indexPrevious][valA])
                         npArrayOfRange[indexPrevious][diff] = valDiff
 
-                        # on supprime l'element d'avant qui est mergeable et qui a changé de valeur 
+                        # on supprime l'element d'avant qui est mergeable et qui a changï¿½ de valeur 
                         clefIndexMergeDelete = npArrayOfRange[indexPrevious][iKey]
                         dicoIndexSorted.removeByKey(clefIndexMergeDelete)
                         # On le remet au bon endroit
@@ -763,6 +763,8 @@ def filter_and_interpolate(group, open_time, close_time):
 def prepareData(shareObj, data_df, columns=['openPrice']):
     data_df = data_df.loc[:, columns]
     for column in columns:
+        # Convert the column to numeric values, coercing errors to NaN
+        # Cela permet de s'assurer que toutes les valeurs sont numÃ©riques, et de gÃ©rer les erreurs en les transformant en NaN
         data_df[column] = pd.to_numeric(data_df[column], errors='coerce')
     grouped = data_df.groupby(pd.Grouper(freq='D'))
     filtered = grouped.apply(filter_and_interpolate, open_time=shareObj.openRichMarketTime, close_time=shareObj.closeRichMarketTime) # openRichMarketTime & closeRichMarketTime 

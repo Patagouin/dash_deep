@@ -1,24 +1,41 @@
+from typing import List
+from Models.Order import Order
+from Models.Broker import Broker
 
 class Wallet:
-	def __init__(self, initialAmount, orders=None):
-		self.initialAmount = initialAmount
-		self.orders = orders
-		UEFeesDegiro = {feesFixed:0, feesPercent:0, feesPerShare:0}
-		USFeesDegiro = {feesFixed:0, feesPercent:0, feesPerShare:0}
-		bkr = Broker("DEGIRO", marketFees={"EU":UEFeesDegiro,"US":USFeesDegiro})
+    def __init__(self, initial_amount: float, broker: Broker, orders: List[Order] = None):
+        self.initial_amount = initial_amount
+        self.current_amount = initial_amount
+        self.broker = broker
+        self.orders = orders or []
+        self.total_profit = 0
+        self.total_fees = 0
 
-	def addOrder(order):
-		self.orders += order
-		# Request to broker
-		
+    def add_order(self, order: Order):
+        self.orders.append(order)
+        self.current_amount -= order.amount * order.price
+        self.current_amount -= self.broker.calculate_fees(order)
+        self.total_fees += self.broker.calculate_fees(order)
 
-	
-	def getIncome(orders):
-		totalProfit=0
-		totalFees=0
-		for order in orders:
-			order
-			totalFees += (amount * fees) + (((order[3]-order[1])/order[1]) * amount) * fees
-			totalProfit += ((order[3]-order[1])/order[1]) * amount
-		
-		return totalProfit-totalFees,totalProfit,totalFees
+    def close_order(self, order: Order, close_price: float):
+        profit = (close_price - order.price) * order.amount
+        self.total_profit += profit
+        self.current_amount += order.amount * close_price
+
+    def get_income(self) -> tuple:
+        return self.total_profit - self.total_fees, self.total_profit, self.total_fees
+
+    def get_current_amount(self) -> float:
+        return self.current_amount
+
+    def get_total_invested(self) -> float:
+        return sum(order.amount * order.price for order in self.orders)
+
+    def get_total_fees(self) -> float:
+        return self.total_fees
+
+    def get_total_profit(self) -> float:
+        return self.total_profit
+
+    def get_orders(self) -> List[Order]:
+        return self.orders

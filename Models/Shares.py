@@ -89,7 +89,12 @@ class Shares:
         #start = False
         nbTotalShares =  self.dfShares.shape[0]
         nbSharesUpdated = 0
+        # cpt=0
         for curShare in self.dfShares.itertuples():
+            # if cpt < 825:
+            #     cpt+=1
+            #     continue
+            
             #if curShare.symbol == "AOS":
             #    start = True
             #else:
@@ -109,11 +114,11 @@ class Shares:
             workingDf = df
 
         for curShare in workingDf.itertuples():
-            # Si l'heure de curShare.lastRecord est inférieure à l'heure de curShare.closeRichMarketTime
+            # Si l'heure de curShare.lastRecord est infï¿½rieure ï¿½ l'heure de curShare.closeRichMarketTime
             if curShare.lastRecord.time() < curShare.closeRichMarketTime:
                 # Change le jour pour jour n-1
                 end_date = curShare.lastRecord - datetime.timedelta(days=1)
-                # Maintient l'heure à curShare.closeRichMarketTime
+                # Maintient l'heure ï¿½ curShare.closeRichMarketTime
                 end_date = end_date.replace(hour=curShare.closeRichMarketTime.hour, minute=curShare.closeRichMarketTime.minute, second=curShare.closeRichMarketTime.second)
                 data_quots = self.get_cotations_data_df(curShare, curShare.firstRecord, end_date)
             else:
