@@ -18,3 +18,6 @@ powershell -Command "$dateNow = Get-Date -format \"yyyy_MM_dd_HH\h_mm\m\"; &\"C:
 
 Requete d'update journalier in pgadmin:
 powershell -Command "conda activate AI_python38; cd \"%DASH_DEEP_PATH%\dash_deep\scripts\"; python \"update_data_launcher.py\" "
+
+
+L'environnement conda 'financial_analysis' est activé via l'extension de VSCode.

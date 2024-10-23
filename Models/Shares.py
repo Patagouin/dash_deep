@@ -6,7 +6,7 @@ import re
 
 import Models.SqlCom as sq
 import Models.utils as ut
-import deepLearning.lstm as ls
+import Models.lstm as ls  # Mise à jour de l'importation
 
 
 
@@ -114,11 +114,11 @@ class Shares:
             workingDf = df
 
         for curShare in workingDf.itertuples():
-            # Si l'heure de curShare.lastRecord est inf�rieure � l'heure de curShare.closeRichMarketTime
+            # Si l'heure de curShare.lastRecord est inférieure à l'heure de curShare.closeRichMarketTime
             if curShare.lastRecord.time() < curShare.closeRichMarketTime:
                 # Change le jour pour jour n-1
                 end_date = curShare.lastRecord - datetime.timedelta(days=1)
-                # Maintient l'heure � curShare.closeRichMarketTime
+                # Maintient l'heure à curShare.closeRichMarketTime
                 end_date = end_date.replace(hour=curShare.closeRichMarketTime.hour, minute=curShare.closeRichMarketTime.minute, second=curShare.closeRichMarketTime.second)
                 data_quots = self.get_cotations_data_df(curShare, curShare.firstRecord, end_date)
             else:

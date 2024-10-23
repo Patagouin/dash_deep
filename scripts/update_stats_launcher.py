@@ -9,6 +9,7 @@ t=time.time()
 
 ## Stats ##
 
+
 shM = sm.Shares(readOnlyThosetoUpdate=True)
 
 shM.computeStatsForAllShares (shM.computeIsToUpdate)

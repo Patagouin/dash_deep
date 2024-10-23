@@ -12,10 +12,12 @@ sys.path.append(project_dir)
 
 import Models.Shares as sm
 
-  
+
+
 if __name__ == "__main__":
 	shM = sm.Shares(readOnlyThosetoUpdate=True)
-	if len(sys.argv) > 1 and sys.argv[1] == "-checkDuplicate":
+	if len(sys.argv) > 1 and sys.argv[1] == "-checkDuplicate": 
 		shM.updateAllSharesCotation(checkDuplicate=True)
 	else:
 		shM.updateAllSharesCotation(checkDuplicate=True)
+
