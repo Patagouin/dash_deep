@@ -1,0 +1,26 @@
+Voici la structure de mon projet (vue partielle):
+web/
+├── __init__.py
+├── app.py
+├── apps/
+│   ├── dashboard.py
+│   ├── prediction.py
+│   ├── sharedFig.py
+│   ├── update.py
+├── index.py
+├── main.py
+├── notifs.py
+Models/
+├── __init__.py
+├── lstm.py
+├── Shares.py
+├── SqlCom.py
+├── utils.py
+scripts/
+├── update_data_launcher.py
+.vscode/
+├── launch.json
+.env
+
+
+L'objectif tout d'abord, c'est de corriger les problèmes d'affichage de ma page web généré via flask et d'y ajouter des fonctionnalités que l'on verra par la suite.

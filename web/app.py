@@ -1,32 +1,51 @@
 # app.py
 import sys
 import os
-
-# Ajout du répertoire racine au sys.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from flask import Flask
+from flask import Flask, send_from_directory
 import dash
 from flask_socketio import SocketIO
+from Models import Shares as sm
 
-# Importation du module Shares (ou autre module contenant shM)
-from Models import Shares as sm  # Remplacez par le chemin correct vers votre module
+# Add the root directory to sys.path
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 
-# Initialisation du serveur Flask
+# Initialize the Flask server
 server = Flask(__name__)
 
-# Initialisation de l'application Dash
+# Initialize SocketIO with CORS settings and debug mode
+socketio = SocketIO(
+    server,
+    cors_allowed_origins="*",
+    async_mode='threading',
+    logger=True,
+    engineio_logger=True,
+    ping_timeout=60,
+    ping_interval=25,
+    always_connect=True,
+    debug=True
+)
+
+# Initialize the Dash app
 app = dash.Dash(
     __name__,
     server=server,
-    suppress_callback_exceptions=True  # Add this line
+    suppress_callback_exceptions=True,
+    assets_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
 )
-# Initialisation de SocketIO
-socketio = SocketIO(server)
 
-# Initialisation de l'objet shM (par exemple, une instance de la classe Shares)
-shM = sm.Shares(readOnlyThosetoUpdate=False)  # Remplacez par l'initialisation correcte
+# Serve static files
+@server.route('/assets/<path:path>')
+def serve_static(path):
+    assets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
+    return send_from_directory(assets_dir, path)
 
-@socketio.on('update_textarea')
-def handle_message(message):
-    socketio.emit('update_textarea', message)
+# Initialize the shM object
+shM = sm.Shares(readOnlyThosetoUpdate=False)
+
+# Expose the server variable for WSGI servers
+application = app.server
+
+# Import socket handlers
+from sockets import socket_handlers

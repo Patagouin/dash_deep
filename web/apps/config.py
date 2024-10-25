@@ -1,5 +1,7 @@
+# config.py
 import sys
 import io
+import dash  # Ajout de l'import manquant
 from dash import dcc, html
 from dash.dependencies import Input, Output, State
 from app import app, shM, socketio
@@ -7,11 +9,11 @@ import Models.Shares as sm
 import threading
 import logging
 
-# Configure logging to display INFO level messages in the console
+# Configure logging
 logging.basicConfig(
-    level=logging.INFO,  # Set the logging level to INFO
-    format='%(asctime)s - %(levelname)s - %(message)s',  # Format of the log messages
-    datefmt='%Y-%m-%d %H:%M:%S'  # Format of the date in the log messages
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
 )
 
 # Example log to test
@@ -19,8 +21,8 @@ logging.warning("Logging is configured and ready to use.")
 
 layout = html.Div([
     html.H3('Configuration Broker'),
-    
-    # Form for Broker type and credentials
+
+    # Broker configuration form
     html.Div([
         html.Label('Broker Type'),
         dcc.Dropdown(
@@ -50,57 +52,149 @@ layout = html.Div([
         html.Button('Save Configuration', id='save_config', n_clicks=0),
         html.Div(id='config_status', style={'color': 'green'})
     ], style={'width': '50%', 'margin': 'auto'}),
-    
+
     html.Hr(),
-    
-    # Section for updating stock data
+
+    # Update stock data section
     html.H3('Update Stock Data'),
-    html.Button('Start Update', id='start_update', n_clicks=0),
-    dcc.Checklist(
-        id='check_duplicate',
-        options=[{'label': 'Check duplicate', 'value': 'check_duplicate'}],
-        value=[],
-    ),
-    dcc.Interval(id='progress_interval', interval=1000, disabled=True),  # Interval initially disabled
-    dcc.Store(id='progress_data', data={'progress': 0}),
-    dcc.Store(id='update_state', data='idle'),  # Store to track update state
+    html.Div([  # Container pour les boutons et la checkbox
+        html.Div([  # Container pour les boutons
+            html.Button(
+                'Start Update', 
+                id='start_update', 
+                n_clicks=0,
+                style={
+                    'backgroundColor': '#4CAF50',
+                    'color': 'white',
+                    'padding': '10px 20px',
+                    'border': 'none',
+                    'borderRadius': '5px',
+                    'cursor': 'pointer',
+                    'marginRight': '10px',
+                    'fontSize': '16px',
+                    'transition': 'background-color 0.3s'
+                },
+                className='update-button'
+            ),
+            html.Button(
+                'Stop Update', 
+                id='stop_update', 
+                n_clicks=0,
+                style={
+                    'backgroundColor': '#f44336',
+                    'color': 'white',
+                    'padding': '10px 20px',
+                    'border': 'none',
+                    'borderRadius': '5px',
+                    'cursor': 'pointer',
+                    'fontSize': '16px',
+                    'transition': 'background-color 0.3s'
+                },
+                className='stop-button'
+            ),
+        ], style={'marginBottom': '10px'}),
+        dcc.Checklist(
+            id='check_duplicate',
+            options=[{'label': 'Check duplicate', 'value': 'check_duplicate'}],
+            value=[],
+            style={'marginTop': '10px'}
+        ),
+    ], style={'width': '50%', 'margin': 'auto', 'textAlign': 'center'}),
     
-    # Use dcc.Loading to show a loading spinner during the update process
-    dcc.Loading(
-        id="loading_progress",
-        type="default",
-        children=[
-            html.Div(id='progress_bar', style={'margin-top': '20px'})
-        ]
-    ),
+    # Ajout d'un store pour le statut d'arrêt
+    dcc.Store(id='stop_status', data=False),
     
-    # Text area to display terminal output
+    dcc.Interval(id='progress_interval', interval=1000, disabled=True),
+    dcc.Store(id='update_state', data='idle'),
+
+    # Progress bar personnalisée
+    html.Div([
+        html.Div(id='progress_bar', 
+                children='0%',
+                style={
+                    'width': '0%',
+                    'height': '30px',
+                    'backgroundColor': '#4CAF50',
+                    'textAlign': 'center',
+                    'lineHeight': '30px',
+                    'color': 'white',
+                    'transition': 'width 0.5s ease-in-out'
+                }),
+    ], style={
+        'width': '50%',
+        'margin': '20px auto',
+        'backgroundColor': '#ddd',
+        'border': '1px solid #ccc',
+        'borderRadius': '5px',
+        'overflow': 'hidden'
+    }),
+
+    # Terminal output textarea avec style amélioré
     dcc.Textarea(
         id='terminal_output',
         value='',
-        style={'width': '100%', 'height': '300px', 'overflowY': 'scroll'}
+        style={
+            'width': '50%',  # Réduire la largeur
+            'height': '300px',
+            'margin': '20px auto',  # Centrer
+            'display': 'block',  # Nécessaire pour que margin: auto fonctionne
+            'backgroundColor': 'black',
+            'color': '#00FF00',  # Vert "terminal"
+            'fontFamily': 'monospace',
+            'padding': '10px',
+            'overflowY': 'scroll'
+        }
     ),
-
-    # Add a script to listen for SocketIO events
-    html.Script('''
-        const socket = io.connect('http://' + document.domain + ':' + location.port);
-        console.log("SocketIO connected:", socket.connected);  // Log the connection status
-
-        // Listen for 'update_terminal' event
-        socket.on('update_terminal', function(message) {
-            console.log("Received terminal update:", message);
-            let textarea = document.getElementById('terminal_output');
-            textarea.value += message.output + "\\n";  // Append the new message to the textarea
-        });
-
-        // Listen for 'update_progress' event
-        socket.on('update_progress', function(data) {
-            console.log("Received progress update:", data);
-            let progressBar = document.getElementById('progress_bar');
-            progressBar.innerHTML = `Progress: ${data.progress}%`;  // Update the progress bar
-        });
-    ''')
 ])
+
+# Ajouter cette variable globale au début du fichier, après les imports
+stop_update_flag = False
+
+# Callback to start the background update process
+@app.callback(
+    Output('progress_interval', 'disabled'),
+    Output('update_state', 'data'),
+    Output('start_update', 'style'),
+    Output('stop_update', 'style'),
+    Output('stop_status', 'data'),
+    [Input('start_update', 'n_clicks'),
+     Input('stop_update', 'n_clicks')],
+    [State('check_duplicate', 'value'),
+     State('update_state', 'data'),
+     State('start_update', 'style'),
+     State('stop_update', 'style')]
+)
+def handle_update_buttons(start_clicks, stop_clicks, check_duplicate, update_state, start_style, stop_style):
+    global stop_update_flag
+    
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return True, 'idle', start_style, stop_style, False
+    
+    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    
+    if button_id == 'start_update' and start_clicks and update_state == 'idle':
+        # Démarrer la mise à jour
+        stop_update_flag = False  # Réinitialiser le flag
+        socketio.start_background_task(update_shares_in_background, 'check_duplicate' in check_duplicate)
+        
+        # Désactiver le bouton Start et activer le bouton Stop
+        start_style.update({'opacity': '0.6', 'cursor': 'not-allowed'})
+        stop_style.update({'opacity': '1', 'cursor': 'pointer'})
+        
+        return False, 'running', start_style, stop_style, False
+    
+    elif button_id == 'stop_update' and stop_clicks and update_state == 'running':
+        # Activer le flag d'arrêt
+        stop_update_flag = True
+        
+        # Activer le bouton Start et désactiver le bouton Stop
+        start_style.update({'opacity': '1', 'cursor': 'pointer'})
+        stop_style.update({'opacity': '0.6', 'cursor': 'not-allowed'})
+        
+        return True, 'idle', start_style, stop_style, True
+    
+    return True, update_state, start_style, stop_style, False
 
 @app.callback(
     Output('config_status', 'children'),
@@ -114,13 +208,17 @@ layout = html.Div([
 )
 def save_configuration(n_clicks, broker_type, username, password, host, port, database):
     if n_clicks > 0:
-        print(f"Configuration saved: {broker_type}, {username}, {password}, {host}, {port}, {database}")
+        logging.info(f"Configuration saved: {broker_type}, {username}, {password}, {host}, {port}, {database}")
         return "Configuration saved successfully!"
     return ""
 
-def update_shares_in_background(check_duplicate, progress_data, terminal_output):
+def update_shares_in_background(check_duplicate):
+    global stop_update_flag
+    stop_update_flag = False  # Réinitialiser le flag au début
+    
     try:
-        # Capture stdout
+        socketio.emit('update_terminal', {'output': 'Starting background task...\n'}, namespace='/')
+        
         old_stdout = sys.stdout
         sys.stdout = io.StringIO()
 
@@ -128,71 +226,48 @@ def update_shares_in_background(check_duplicate, progress_data, terminal_output)
         total_shares = len(shM.dfShares)
         updated_shares = 0
 
-        for share in shM.dfShares.itertuples():               
-            shM.updateShareCotations(share, checkDuplicate=check_duplicate)
-            updated_shares += 1
-            # Convertir en float pour éviter les problèmes de sérialisation
-            progress = float((updated_shares / total_shares) * 100)
-            progress_data['progress'] = progress
-            
-            # Capture the output from updateShareCotations
+        for share in shM.dfShares.itertuples():
+            try:
+                # Vérifier si l'arrêt a été demandé
+                if stop_update_flag:  # Utiliser la variable globale au lieu de app.get_asset_url
+                    socketio.emit('update_terminal', {'output': 'Update process stopped by user\n'}, namespace='/')
+                    break
 
-            captured_output = sys.stdout.getvalue()
-            sys.stdout.truncate(0)
-            sys.stdout.seek(0)
+                shM.updateShareCotations(share, checkDuplicate=check_duplicate)
+                updated_shares += 1
 
-            # Emit the captured output to the client
-            if captured_output:
-                terminal_output += captured_output
-                logging.warning(f"Emitting terminal output: {captured_output}")
-                # S'assurer que captured_output est une chaîne de caractères
-                socketio.emit('update_terminal', {'output': str(captured_output)})
+                progress = float((updated_shares / total_shares) * 100)
 
-            # Emit progress
-            logging.warning(f"Emitting progress: {progress}")
-            socketio.emit('update_progress', {'progress': progress})
-        
-        terminal_output += "Update complete!\n"
-        logging.warning(f"Emitting terminal output: {terminal_output}")
-        socketio.emit('update_terminal', {'output': str(terminal_output)})
+                captured_output = sys.stdout.getvalue()
+                if captured_output:
+                    socketio.emit('update_terminal', {'output': captured_output}, namespace='/')
+                sys.stdout.truncate(0)
+                sys.stdout.seek(0)
+
+                socketio.emit('update_progress', {'progress': progress}, namespace='/')
+
+            except Exception as share_error:
+                error_msg = f"Error processing share {share.symbol}: {str(share_error)}\n"
+                socketio.emit('update_terminal', {'output': error_msg}, namespace='/')
+
+        socketio.emit('update_terminal', {'output': 'Update process finished\n'}, namespace='/')
 
     except Exception as e:
-        terminal_output += f"Error: {str(e)}\n"
-        logging.warning(f"Error occurred: {str(e)}")
-        socketio.emit('update_terminal', {'output': str(terminal_output)})
+        error_message = f"Error in background task: {str(e)}\n"
+        socketio.emit('update_terminal', {'output': error_message}, namespace='/')
 
     finally:
-        # Restore stdout
         sys.stdout = old_stdout
 
+# Modifier le callback de mise à jour de la barre de progression
 @app.callback(
+    Output('progress_bar', 'style'),
     Output('progress_bar', 'children'),
-    Output('terminal_output', 'value'),
-    Output('progress_data', 'data'),
-    Output('start_update', 'n_clicks'),
-    Output('progress_interval', 'disabled'),
-    Output('update_state', 'data'),
-    Input('start_update', 'n_clicks'),
-    Input('progress_interval', 'n_intervals'),
-    State('check_duplicate', 'value'),
-    State('progress_data', 'data'),
-    State('terminal_output', 'value'),
-    State('update_state', 'data')
+    [Input('progress_interval', 'n_intervals')],
+    [State('progress_bar', 'style')]
 )
-def update_stock_data(n_clicks, n_intervals, check_duplicate, progress_data, terminal_output, update_state):
-    if n_clicks > 0 and update_state == 'idle':
-        # Initialiser progress_data avec des types simples
-        if progress_data is None:
-            progress_data = {'progress': 0.0}
-        thread = threading.Thread(
-            target=update_shares_in_background, 
-            args=('check_duplicate' in check_duplicate, progress_data, terminal_output or '')
-        )
-        thread.start()
-        return "Updating...", terminal_output or '', progress_data, 0, False, 'running'
-    
-    if update_state == 'running':
-        progress = progress_data.get('progress', 0.0) if progress_data else 0.0
-        return f"Progress: {progress}%", terminal_output or '', progress_data, n_clicks, False, 'running'
-    
-    return "", terminal_output or '', progress_data or {'progress': 0.0}, n_clicks, True, 'idle'
+def update_progress_bar(n, current_style):
+    if not current_style:
+        current_style = {}
+    # La largeur sera mise à jour par Socket.IO
+    return current_style, current_style.get('width', '0%')

@@ -1,0 +1,15 @@
+/* Hover effects for buttons */
+.update-button:hover {
+    background-color: #45a049 !important;
+}
+
+.stop-button:hover {
+    background-color: #da190b !important;
+}
+
+/* Disabled state */
+.update-button:disabled,
+.stop-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
