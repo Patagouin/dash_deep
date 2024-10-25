@@ -14,56 +14,90 @@ layout = html.Div([
     
     # Dropdown for selecting stocks
     dcc.Dropdown(
-        id='dashboard_dropdown',  # ID of the dropdown
+        id='dashboard_dropdown',
         options=[
             {'label': '{}'.format(stock.symbol), 'value': stock.symbol} 
-            for stock in sorted(shM.dfShares.itertuples(), key=lambda stock: stock.symbol)  # Sort by stock symbol
+            for stock in sorted(shM.dfShares.itertuples(), key=lambda stock: stock.symbol)
         ],
-        multi=True
+        multi=True,
+        style={'width': '50%', 'margin': '10px auto'}
     ),
     
-    # RadioItems for selecting data type (All Data or Main Hours)
-    html.Div([
-        dcc.RadioItems(
-            id='data_type_selector',
-            options=[
-                {'label': 'All Data', 'value': 'all'},
-                {'label': 'Main Hours', 'value': 'main'}
-            ],
-            value='all',  # Default to 'All Data'
-            labelStyle={'display': 'inline-block', 'margin-right': '10px'}
-        )
-    ], style={'textAlign': 'center', 'margin-top': '10px'}),
-
-    # Graph to display stock data
+    # Graph container
     html.Div([
         dcc.Graph(
-            id='stock_graph', 
-            figure=fig,  # ID of the graph
-            config={'scrollZoom': True}  # Enable scroll zooming
+            id='stock_graph',
+            figure=fig,
+            config={'scrollZoom': True},
+            style={
+                'backgroundColor': 'black',
+                'height': '50vh'
+            }
         )
-    ], style={'width': '100%'}),  # The graph takes up the full width
+    ], style={
+        'width': '100%',
+        'margin': '20px 0',
+        'backgroundColor': 'black',
+        'padding': '20px 0'
+    }),
 
-    # Date range picker
-    dcc.DatePickerRange(
-        id='date_picker_range',  # ID of the date picker
-        display_format='DD/MM/YY',
-        start_date=datetime.datetime.now()-datetime.timedelta(days=7),
-        end_date=datetime.datetime.now()
-    ),
-    
-    # Section for the Normalize button and links
+    # Controls section
     html.Div([
-        daq.BooleanSwitch(id='boolean_switch_normalize', label="Normalize", on=False, color="#f80"),  # ID of the boolean switch
-        html.Br(),
-        dcc.Link('Go to Configuration', href='/config'),  # Add link to config page
-        html.Br(),
-        dcc.Link('Go update', href='/update'),
-        html.Br(),
-        dcc.Link('Go to prediction', href='/prediction')
-    ], style={'width': '100%', 'textAlign': 'center'})  # Center the elements
-    
-])
+        # Date range picker et RadioItems dans le même conteneur
+        html.Div([
+            dcc.DatePickerRange(
+                id='date_picker_range',
+                display_format='DD/MM/YY',
+                start_date=datetime.datetime.now()-datetime.timedelta(days=7),
+                end_date=datetime.datetime.now()
+            ),
+            html.Div([
+                dcc.RadioItems(
+                    id='data_type_selector',
+                    options=[
+                        {'label': 'All Data', 'value': 'all'},
+                        {'label': 'Main Hours', 'value': 'main'}
+                    ],
+                    value='all',
+                    labelStyle={'display': 'inline-block', 'margin': '0 10px'}
+                )
+            ], style={'display': 'inline-block', 'marginLeft': '20px'})
+        ], style={'margin': '20px 0'}),
+
+        # Normalize switch
+        html.Div([
+            daq.BooleanSwitch(
+                id='boolean_switch_normalize',
+                label="Normalize",
+                on=False,
+                color="#4CAF50",
+                labelPosition="top"
+            )
+        ], style={'margin': '20px 0'}),
+
+        # Navigation standardisée avec séparateur
+        html.Div([
+            html.Hr(style={
+                'width': '50%',
+                'margin': '20px auto',
+                'borderTop': '1px solid #666'
+            }),
+            html.Div([
+                dcc.Link('Prediction', href='/prediction', style={'color': '#4CAF50', 'textDecoration': 'none'}),
+                html.Span(' | ', style={'margin': '0 10px', 'color': '#666'}),
+                dcc.Link('Update', href='/update', style={'color': '#4CAF50', 'textDecoration': 'none'}),
+                html.Span(' | ', style={'margin': '0 10px', 'color': '#666'}),
+                dcc.Link('Config', href='/config', style={'color': '#4CAF50', 'textDecoration': 'none'})
+            ], style={'textAlign': 'center'})
+        ])
+    ], style={
+        'width': '100%',
+        'textAlign': 'center',
+        'backgroundColor': 'black',
+        'padding': '20px 0',
+        'color': 'white'
+    }),
+], style={'backgroundColor': 'black', 'minHeight': '100vh'})
 
 @app.callback(
     Output('stock_graph', 'figure'),  # ID of the output component
@@ -166,4 +200,3 @@ def display_stock_graph(values, start_date, end_date, toNormalize, relayoutData,
     
     return fig
 print("App object in dashboard.py:", id(app))
-

@@ -17,13 +17,9 @@ function initializeSocket() {
     // Debug events
     socket.on('connect', () => {
         console.log('Socket connected!', socket.id);
-        socket.emit('message', 'Hello from client!');  // Test message
-        
         // Debug: Check if elements exist
         const textarea = document.getElementById('terminal_output');
         const progressBar = document.getElementById('progress_bar');
-        console.log('Textarea exists:', !!textarea);
-        console.log('Progress bar exists:', !!progressBar);
     });
 
     socket.on('disconnect', () => {
@@ -40,8 +36,6 @@ function initializeSocket() {
         const textarea = document.getElementById('terminal_output');
         if (textarea) {
             const shouldScroll = textarea.scrollTop + textarea.clientHeight === textarea.scrollHeight;
-            
-            console.log('Updating textarea with:', data.output);
             textarea.value += data.output;
             
             // Ne faire défiler que si l'utilisateur était déjà en bas
@@ -54,7 +48,6 @@ function initializeSocket() {
     });
 
     socket.on('update_progress', (data) => {
-        console.log('Received progress update:', data);
         const progressBar = document.getElementById('progress_bar');
         if (progressBar) {
             const percentage = Math.round(data.progress); // Arrondir le pourcentage

@@ -22,8 +22,8 @@ app.layout = layout
 if __name__ == '__main__':
     socketio.run(
         app.server,
-        debug=True,
+        debug=False,  # Désactiver le mode debug
         port=8050,
         allow_unsafe_werkzeug=True,
-        log_output=True
+        log_output=False  # Désactiver les logs de sortie
     )

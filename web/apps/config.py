@@ -11,7 +11,7 @@ import logging
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format='%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
@@ -145,7 +145,29 @@ layout = html.Div([
             'overflowY': 'scroll'
         }
     ),
-])
+    
+    # Navigation standardisée avec séparateur
+    html.Div([
+        html.Hr(style={
+            'width': '50%',
+            'margin': '20px auto',
+            'borderTop': '1px solid #666'
+        }),
+        html.Div([
+            dcc.Link('Dashboard', href='/dashboard', style={'color': '#4CAF50', 'textDecoration': 'none'}),
+            html.Span(' | ', style={'margin': '0 10px', 'color': '#666'}),
+            dcc.Link('Prediction', href='/prediction', style={'color': '#4CAF50', 'textDecoration': 'none'}),
+            html.Span(' | ', style={'margin': '0 10px', 'color': '#666'}),
+            dcc.Link('Update', href='/update', style={'color': '#4CAF50', 'textDecoration': 'none'})
+        ], style={'textAlign': 'center'})
+    ], style={
+        'width': '100%',
+        'textAlign': 'center',
+        'backgroundColor': 'black',
+        'padding': '20px 0',
+        'color': 'white'
+    })
+], style={'backgroundColor': 'black', 'minHeight': '100vh'})
 
 # Ajouter cette variable globale au début du fichier, après les imports
 stop_update_flag = False
