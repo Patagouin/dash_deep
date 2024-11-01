@@ -1,14 +1,19 @@
 #prediction.py
 from dash import dcc, html
-from dash.dependencies import Input, Output, State
+from dash.dependencies import Input, Output
 import dash_daq as daq
 import plotly.graph_objs as go
+from web.components.navigation import create_navigation  # Importer le composant de navigation
+
 import datetime
-from web.app import app, shM
-from web.apps.sharedFig import fig
+
+from app import app, shM
+from web.apps.sharedFig import fig  # Remplacement de l'importation relative par une importation absolue
+
+from Models.trading212 import buy_stock, sell_stock
 
 layout = html.Div([
-    html.H3('Stock Analysis & Prediction'),
+    html.H3('Prediction'),
     
     # Dropdown for selecting stocks
     dcc.Dropdown(
@@ -20,10 +25,11 @@ layout = html.Div([
         multi=True,
         style={'width': '50%', 'margin': '10px auto'}
     ),
+    
     # Graph container
     html.Div([
         dcc.Graph(
-            id='prediction_graph',
+            id='stock_graph',
             figure=fig,
             config={'scrollZoom': True},
             style={
@@ -37,74 +43,59 @@ layout = html.Div([
         'backgroundColor': 'black',
         'padding': '20px 0'
     }),
-    # Date range picker et RadioItems dans le même conteneur
+
+    # Controls section
     html.Div([
-        dcc.DatePickerRange(
-            id='date_picker_range',
-            display_format='DD/MM/YY',
-            start_date=datetime.datetime.now()-datetime.timedelta(days=7),
-            end_date=datetime.datetime.now()
-        ),
+        # Date range picker et RadioItems dans le même conteneur
         html.Div([
-            dcc.RadioItems(
-                id='data_type_selector',
-                options=[
-                    {'label': 'All Data', 'value': 'all'},
-                    {'label': 'Main Hours', 'value': 'main'}
-                ],
-                value='all',
-                labelStyle={'display': 'inline-block', 'margin': '0 10px'}
+            dcc.DatePickerRange(
+                id='date_picker_range',
+                display_format='DD/MM/YY',
+                start_date=datetime.datetime.now()-datetime.timedelta(days=7),
+                end_date=datetime.datetime.now()
+            ),
+            html.Div([
+                dcc.RadioItems(
+                    id='data_type_selector',
+                    options=[
+                        {'label': 'All Data', 'value': 'all'},
+                        {'label': 'Main Hours', 'value': 'main'}
+                    ],
+                    value='all',
+                    labelStyle={'display': 'inline-block', 'margin': '0 10px'}
+                )
+            ], style={'display': 'inline-block', 'marginLeft': '20px'})
+        ], style={'margin': '20px 0'}),
+
+        # Normalize switch
+        html.Div([
+            daq.BooleanSwitch(
+                id='boolean_switch_normalize',
+                label="Normalize",
+                on=False,
+                color="#4CAF50",
+                labelPosition="top"
             )
-        ], style={'display': 'inline-block', 'marginLeft': '20px'})
-    ], style={'margin': '20px 0', 'textAlign': 'center'}),
+        ], style={'margin': '20px 0'}),
 
-    # Normalize switch
-    html.Div([
-        daq.BooleanSwitch(
-            id='boolean_switch_normalize',
-            label="Normalize",
-            on=False,
-            color="#4CAF50",
-            labelPosition="top"
-        )
-    ], style={'margin': '20px 0', 'textAlign': 'center'}),
-
-    # Navigation standardisée
-    html.Div([
-        html.Hr(style={
-            'width': '50%',
-            'margin': '20px auto',
-            'borderTop': '1px solid #666'
-        }),
-        html.Div([
-            dcc.Link('Dashboard', href='/dashboard', style={'color': '#4CAF50', 'textDecoration': 'none'}),
-            html.Span(' | ', style={'margin': '0 10px', 'color': '#666'}),
-            dcc.Link('Update', href='/update', style={'color': '#4CAF50', 'textDecoration': 'none'}),
-            html.Span(' | ', style={'margin': '0 10px', 'color': '#666'}),
-            dcc.Link('Config', href='/config', style={'color': '#4CAF50', 'textDecoration': 'none'})
-        ], style={'textAlign': 'center'})
-    ], style={
-        'width': '100%',
-        'textAlign': 'center',
-        'backgroundColor': 'black',
-        'padding': '20px 0',
-        'color': 'white'
-    })
+        create_navigation()
+    ])
 ], style={'backgroundColor': 'black', 'minHeight': '100vh'})
 
 @app.callback(
-    Output('prediction_graph', 'figure'),
-    [Input('prediction_dropdown', 'value'),
-     Input('date_picker_range', 'start_date'),
-     Input('date_picker_range', 'end_date'),
-     Input('boolean_switch_normalize', 'on'),
-     Input('prediction_graph', 'relayoutData'),
-     Input('data_type_selector', 'value')]
+    Output('stock_graph', 'figure'),  # ID of the output component
+    Input('prediction_dropdown', 'value'),  # ID of the dropdown
+    Input('date_picker_range', 'start_date'),  # ID of the date picker (start date)
+    Input('date_picker_range', 'end_date'),  # ID of the date picker (end date)
+    Input('boolean_switch_normalize', 'on'),  # ID of the boolean switch
+    Input('stock_graph', 'relayoutData'),  # Capture the current layout (zoom level)
+    Input('data_type_selector', 'value'),  # Capture the selected data type (All Data or Main Hours)
 )
-def update_graph(values, start_date, end_date, toNormalize, relayoutData, data_type):
+def display_stock_graph(values, start_date, end_date, toNormalize, relayoutData, data_type):
+
     if values is None or len(values) == 0:
         print("No values selected.")
-        fig = go.Figure()
+        fig = go.FigureWidget()
         fig.layout.template = 'plotly_dark'
         return fig
     
@@ -122,7 +113,7 @@ def update_graph(values, start_date, end_date, toNormalize, relayoutData, data_t
     print("Date range:", dateBegin, "to", dateLast)
 
     # Création d'une figure vide avec un thème sombre
-    fig = go.Figure()
+    fig = go.FigureWidget()
     fig.layout.template = 'plotly_dark'
     fig.update_layout(hovermode="x unified")
     fig.update_layout(hoverlabel_bgcolor='#00FF00')
@@ -151,11 +142,12 @@ def update_graph(values, start_date, end_date, toNormalize, relayoutData, data_t
             open_time = dfShares.iloc[i].openMarketTime
             close_time = dfShares.iloc[i].closeMarketTime
 
-            # Filter data based on the selected data type
+            # Filter data based on the selected data type (All Data or Main Hours)
             if data_type == 'main':
+                # Filter out extended hours data using the stock's specific market hours
                 dfData = dfData.between_time(open_time.strftime('%H:%M'), close_time.strftime('%H:%M'))
 
-            if toNormalize and dfData['openPrice'][0] > 0:
+            if toNormalize and dfData['openPrice'][0] > 0:  # Normalisation si nécessaire
                 dfData['openPrice'] /= dfData['openPrice'][0]
             fig.add_scatter(name=values[i], x=dfData.index.values, y=dfData['openPrice'].values)
         else:
@@ -188,5 +180,6 @@ def update_graph(values, start_date, end_date, toNormalize, relayoutData, data_t
             fig.update_layout(
                 yaxis_range=[y_min, y_max]
             )
-    
+
     return fig
+print("App object in prediction.py:", id(app))

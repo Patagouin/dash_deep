@@ -1,6 +1,6 @@
 #index.py
 from dash.dependencies import Input, Output  # Ajout des imports manquants
-from web.apps import dashboard, update, prediction, config  # Import the new config page
+from web.apps import dashboard, update, prediction, config, transaction  # Import the new config page
 from dash import dcc, html
 from app import app
 
@@ -27,6 +27,9 @@ def display_page(pathname):
     elif pathname == '/config':  # Add the config page route
         print("Loading config layout")  # Debugging print
         return config.layout
+    elif pathname == '/transaction':  # Nouvelle route pour Transaction
+        print("Loading transaction layout")  # Debugging print
+        return transaction.layout
     else:
         print("404 Not Found")  # Debugging print
         return html.Div("404 Not Found")

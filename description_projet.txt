@@ -7,6 +7,15 @@ web/
 │   ├── prediction.py
 │   ├── sharedFig.py
 │   ├── update.py
+│   ├── config.py
+├── assets/
+│   ├── stylesheet.css
+│   ├── custom.css
+│   ├── socket.js
+│   ├── socket_loader.js
+├── sockets/
+│   ├── __init__.py
+│   ├── socket_handlers.py
 ├── index.py
 ├── main.py
 ├── notifs.py

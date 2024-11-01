@@ -5,9 +5,14 @@ import dash  # Ajout de l'import manquant
 from dash import dcc, html
 from dash.dependencies import Input, Output, State
 from app import app, shM, socketio
+from web.components.navigation import create_navigation  # Importer le composant de navigation
+
 import Models.Shares as sm
 import threading
 import logging
+import os  # Importer os pour gérer les chemins de fichiers
+from Models.SqlCom import SqlCom  # Importer la classe SqlCom
+from dotenv import load_dotenv  # Add this to load environment variables
 
 # Configure logging
 logging.basicConfig(
@@ -28,8 +33,7 @@ layout = html.Div([
         dcc.Dropdown(
             id='broker_type',
             options=[
-                {'label': 'Broker A', 'value': 'broker_a'},
-                {'label': 'Broker B', 'value': 'broker_b'}
+                {'label': 'Trading 212', 'value': 'trading_212'}  # Ajout de Trading 212
             ],
             value='broker_a'  # Default value
         ),
@@ -53,27 +57,20 @@ layout = html.Div([
         html.Div(id='config_status', style={'color': 'green'})
     ], style={'width': '50%', 'margin': 'auto'}),
 
-    # Navigation standardisée avec séparateur
+    html.Hr(),
+
+    # Section pour l'exportation des données
+    html.H3('Export Database'),
     html.Div([
-        html.Hr(style={
-            'width': '50%',
-            'margin': '20px auto',
-            'borderTop': '1px solid #666'
-        }),
-        html.Div([
-            dcc.Link('Dashboard', href='/dashboard', style={'color': '#4CAF50', 'textDecoration': 'none'}),
-            html.Span(' | ', style={'margin': '0 10px', 'color': '#666'}),
-            dcc.Link('Prediction', href='/prediction', style={'color': '#4CAF50', 'textDecoration': 'none'}),
-            html.Span(' | ', style={'margin': '0 10px', 'color': '#666'}),
-            dcc.Link('Update', href='/update', style={'color': '#4CAF50', 'textDecoration': 'none'})
-        ], style={'textAlign': 'center'})
-    ], style={
-        'width': '100%',
-        'textAlign': 'center',
-        'backgroundColor': 'black',
-        'padding': '20px 0',
-        'color': 'white'
-    })
+        html.Label('Export Path'),
+        dcc.Input(id='export_path', type='text', value=os.getcwd(), style={'width': '100%'}),  # Chemin par défaut = répertoire courant
+        html.Br(),
+        html.Button('Export Data', id='export_button', n_clicks=0),
+        html.Div(id='export_status', style={'color': 'green'})
+    ], style={'width': '50%', 'margin': 'auto'}),
+
+    # Navigation standardisée avec séparateur
+    create_navigation()
 ], style={'backgroundColor': 'black', 'minHeight': '100vh'})
 
 @app.callback(
@@ -88,6 +85,36 @@ layout = html.Div([
 )
 def save_configuration(n_clicks, broker_type, username, password, host, port, database):
     if n_clicks > 0:
-        logging.info(f"Configuration saved: {broker_type}, {username}, {password}, {host}, {port}, {database}")
-        return "Configuration saved successfully!"
+        if broker_type == 'trading_212':
+            # Sauvegarder les informations spécifiques à Trading 212
+            logging.info(f"Trading 212 configuration saved: {username}, {password}")
+            # Vous pouvez ajouter ici la logique pour sauvegarder ces informations dans un fichier ou une base de données
+            return "Trading 212 configuration saved successfully!"
+        else:
+            logging.info(f"Configuration saved: {broker_type}, {username}, {password}, {host}, {port}, {database}")
+            return "Configuration saved successfully!"
+    return ""
+
+# Callback pour gérer l'exportation des données
+@app.callback(
+    Output('export_status', 'children'),
+    Input('export_button', 'n_clicks'),
+    State('export_path', 'value')
+)
+def export_database(n_clicks, export_path):
+    if n_clicks > 0:
+        # Créer une instance de SqlCom pour interagir avec la base de données
+        sql_com = SqlCom(
+            user=os.getenv('DB_USER'),
+            password=os.getenv('DB_PASSWORD'),
+            host=os.getenv('DB_HOST'),
+            port=os.getenv('DB_PORT'),
+            database=os.getenv('DB_NAME'),
+            sharesObj=None
+        )
+
+        # Appeler la méthode d'exportation
+        export_message = sql_com.export_data_to_csv(export_path)
+
+        return export_message
     return ""

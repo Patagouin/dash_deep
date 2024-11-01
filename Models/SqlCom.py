@@ -1,4 +1,6 @@
 import psycopg2
+import csv
+import os
 
 import Models.utils as ut
 import datetime
@@ -7,6 +9,7 @@ import numpy as np
 import pytz
 import re
 from pandas.tseries.offsets import BDay
+import subprocess  # Importer subprocess pour exécuter des commandes système
 
 #chatGPT
 #from sqlalchemy import create_engine
@@ -761,3 +764,38 @@ class SqlCom:
         except(Exception) as error:
             print (f"Error while updating model: {modelName} pour {shareObj.symbol}: ", error)
             exit(-1)
+
+    def export_data_to_csv(self, export_path):
+        try:
+            # Générer dynamiquement le nom du fichier d'exportation avec la date et l'heure actuelles
+            date_now = datetime.datetime.now().strftime("%Y_%m_%d_%Hh_%Mm")
+            export_file = os.path.join(export_path, f"auto_backup_stocksprices_{date_now}.dump")
+
+            # Construire la commande pg_dump sans l'option --no-password
+            pg_dump_command = [
+                'pg_dump',  # Utilisation de pg_dump
+                '--file', export_file,
+                '--host', self.host,
+                '--port', self.port,
+                '--username', self.user,
+                '--verbose',
+                '--format=c',  # Format compressé
+                '--blobs',  # Inclure les blobs
+                self.database  # Nom de la base de données
+            ]
+
+            # Ajouter le mot de passe à l'environnement pour pg_dump
+            env = os.environ.copy()
+            env['PGPASSWORD'] = self.password  # Ajouter le mot de passe à l'environnement
+
+            # Exécuter la commande pg_dump via subprocess
+            result = subprocess.run(pg_dump_command, capture_output=True, text=True, env=env)
+
+            # Vérifier si la commande a réussi
+            if result.returncode == 0:
+                return f"Data successfully exported to {export_file}"
+            else:
+                return f"Error during export: {result.stderr}"
+
+        except Exception as e:
+            return f"Error during export: {str(e)}"

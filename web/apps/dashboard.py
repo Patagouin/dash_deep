@@ -1,33 +1,157 @@
 #dashboard.py
 from dash import dcc, html
+import pandas as pd
+import plotly.graph_objs as go
+from datetime import datetime, timedelta
+import numpy as np
+from web.components.navigation import create_navigation  # Importer le composant de navigation
+
+def load_transaction_data():
+    try:
+        return pd.read_csv('mock_transactions.csv', parse_dates=['date'])
+    except FileNotFoundError:
+        from web.data.mock_transactions import generate_mock_transactions
+        data = generate_mock_transactions()
+        data.to_csv('mock_transactions.csv', index=False)
+        return data
+
+def calculate_portfolio_metrics(df):
+    # Calculer la valeur totale du portefeuille
+    portfolio_value = 0
+    current_holdings = {}
+    
+    # Initialiser les holdings pour tous les symboles uniques
+    for symbol in df['symbol'].unique():
+        current_holdings[symbol] = {'quantity': 0, 'total_cost': 0}
+    
+    # Trier le DataFrame par date pour traiter les transactions chronologiquement
+    df = df.sort_values('date')
+    
+    for _, row in df.iterrows():
+        if row['type'] == 'BUY':
+            current_holdings[row['symbol']]['quantity'] += row['quantity']
+            current_holdings[row['symbol']]['total_cost'] += row['total']
+        else:  # SELL
+            # Vérifier si nous avons assez d'actions à vendre
+            if current_holdings[row['symbol']]['quantity'] >= row['quantity']:
+                current_holdings[row['symbol']]['quantity'] -= row['quantity']
+                # Ajuster le coût total proportionnellement
+                cost_per_share = current_holdings[row['symbol']]['total_cost'] / (current_holdings[row['symbol']]['quantity'] + row['quantity'])
+                current_holdings[row['symbol']]['total_cost'] -= (cost_per_share * row['quantity'])
+            else:
+                # Si on n'a pas assez d'actions, ignorer cette vente ou la traiter comme une vente à découvert
+                print(f"Warning: Attempted to sell {row['quantity']} shares of {row['symbol']} but only had {current_holdings[row['symbol']]['quantity']}")
+                continue
+            
+    # Calculer les gains/pertes pour différentes périodes
+    now = datetime.now()
+    periods = {
+        'all_time': df['date'].min(),
+        'month': now - timedelta(days=30),
+        'week': now - timedelta(days=7),
+        'day': now - timedelta(days=1)
+    }
+    
+    results = {}
+    for period_name, start_date in periods.items():
+        period_df = df[df['date'] >= start_date]
+        gains = period_df[period_df['type'] == 'SELL']['total'].sum()
+        losses = period_df[period_df['type'] == 'BUY']['total'].sum()
+        net = gains - losses
+        results[period_name] = {
+            'gains': gains,
+            'losses': losses,
+            'net': net
+        }
+    
+    return current_holdings, results
+
+def create_pnl_graph(df):
+    # Créer un graphique d'évolution des gains/pertes cumulés
+    df['cumulative_pnl'] = df.apply(
+        lambda x: x['total'] if x['type'] == 'SELL' else -x['total'],
+        axis=1
+    ).cumsum()
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df['date'],
+        y=df['cumulative_pnl'],
+        mode='lines',
+        name='P&L Cumulé',
+        line=dict(color='white')
+    ))
+    
+    fig.update_layout(
+        template='plotly_dark',
+        title='Évolution des Gains/Pertes',
+        xaxis_title='Date',
+        yaxis_title='P&L Cumulé ($)',
+        plot_bgcolor='black',
+        paper_bgcolor='black',
+        font=dict(color='white')
+    )
+    
+    return fig
+
+# Charger les données
+df = load_transaction_data()
+current_holdings, period_results = calculate_portfolio_metrics(df)
 
 layout = html.Div([
-    html.H3('Dashboard'),
+    html.H3('Dashboard', style={'color': 'white', 'textAlign': 'center'}),
     
-    # Contenu du dashboard (à définir selon vos besoins)
+    # Portfolio Value Section
     html.Div([
-        html.P("Welcome to the dashboard")
-    ], style={'margin': '20px'}),
+        html.H4('Valeur Totale du Portefeuille', style={'color': 'white'}),
+        html.H2(
+            f"${sum(holding['total_cost'] for holding in current_holdings.values()):,.2f}",
+            style={'color': 'white'}
+        )
+    ], style={'textAlign': 'center', 'margin': '20px'}),
+    
+    # P&L Metrics for Different Periods
+    html.Div([
+        html.Div([
+            html.H5(period.title(), style={'color': 'white'}),
+            html.Div([
+                html.P(f"Gains: ${metrics['gains']:,.2f}", style={'color': '#4CAF50'}),
+                html.P(f"Pertes: ${metrics['losses']:,.2f}", style={'color': '#f44336'}),
+                html.P(
+                    f"Net: ${metrics['net']:,.2f}",
+                    style={'color': '#4CAF50' if metrics['net'] > 0 else '#f44336'}
+                )
+            ])
+        ], style={
+            'backgroundColor': '#1a1a1a',
+            'padding': '15px',
+            'borderRadius': '5px',
+            'margin': '10px',
+            'flex': '1'
+        }) for period, metrics in period_results.items()
+    ], style={
+        'display': 'flex',
+        'justifyContent': 'space-around',
+        'flexWrap': 'wrap',
+        'margin': '20px 0'
+    }),
+    
+    # P&L Evolution Graph
+    html.Div([
+        dcc.Graph(
+            figure=create_pnl_graph(df),
+            style={'height': '50vh'}
+        )
+    ], style={'margin': '20px 0'}),
+
+    # Spacer pour éviter que le contenu ne soit caché derrière la navigation
+    html.Div(style={'height': '80px'}),
 
     # Navigation standardisée
-    html.Div([
-        html.Hr(style={
-            'width': '50%',
-            'margin': '20px auto',
-            'borderTop': '1px solid #666'
-        }),
-        html.Div([
-            dcc.Link('Prediction', href='/prediction', style={'color': '#4CAF50', 'textDecoration': 'none'}),
-            html.Span(' | ', style={'margin': '0 10px', 'color': '#666'}),
-            dcc.Link('Update', href='/update', style={'color': '#4CAF50', 'textDecoration': 'none'}),
-            html.Span(' | ', style={'margin': '0 10px', 'color': '#666'}),
-            dcc.Link('Config', href='/config', style={'color': '#4CAF50', 'textDecoration': 'none'})
-        ], style={'textAlign': 'center'})
-    ], style={
-        'width': '100%',
-        'textAlign': 'center',
-        'backgroundColor': 'black',
-        'padding': '20px 0',
-        'color': 'white'
-    })
-], style={'backgroundColor': 'black', 'minHeight': '100vh'})
+    create_navigation()
+
+], style={
+    'backgroundColor': 'black',
+    'minHeight': '100vh',
+    'padding': '20px'
+})
