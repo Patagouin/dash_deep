@@ -50,5 +50,3 @@ application = app.server
 # Import socket handlers
 from sockets import socket_handlers
 
-if __name__ == '__main__':
-    socketio.run(app, debug=True)
