@@ -6,12 +6,13 @@ from dash import dcc, html
 from dash.dependencies import Input, Output, State
 from web.components.navigation import create_navigation  # Importer le composant de navigation
 from web.app import app, shM, socketio
+import Models.Shares as sm
 import Models.utils as ut
 import logging
 
 # Configure logging
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
@@ -131,12 +132,15 @@ def handle_update_buttons(start_clicks, stop_clicks, check_duplicate, update_sta
     
     ctx = dash.callback_context
     if not ctx.triggered:
+        logging.info("No button clicked")
         return True, 'idle', start_style, stop_style, False
     
     button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    logging.info(f"Button clicked: {button_id}")
     
     if button_id == 'start_update' and start_clicks and update_state == 'idle':
         stop_update_flag = False
+        logging.info("Starting background task...")
         socketio.start_background_task(update_shares_in_background, 'check_duplicate' in check_duplicate)
         
         start_style.update({'opacity': '0.6', 'cursor': 'not-allowed'})
@@ -146,6 +150,7 @@ def handle_update_buttons(start_clicks, stop_clicks, check_duplicate, update_sta
     
     elif button_id == 'stop_update' and stop_clicks and update_state == 'running':
         stop_update_flag = True
+        logging.info("Stopping update process...")
         
         start_style.update({'opacity': '1', 'cursor': 'pointer'})
         stop_style.update({'opacity': '0.6', 'cursor': 'not-allowed'})

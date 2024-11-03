@@ -8,13 +8,21 @@ import Models.SqlCom as sq
 import Models.utils as ut
 import Models.lstm as ls  # Mise à jour de l'importation
 
-
+from dotenv import load_dotenv  # Add this to load environment variables
+import os
 
 class Shares:
 
     def __init__(self, readOnlyThosetoUpdate=False):
         self.dfShares = pd.DataFrame()
-        self.__sqlObj = sq.SqlCom("postgres", "Rapide23$", "127.0.0.1", "5432", "stocksprices", self)
+        self.__sqlObj = sq.SqlCom(
+            user=os.getenv('DB_USER'),
+            password=os.getenv('DB_PASSWORD'),
+            host=os.getenv('DB_HOST'),
+            port=os.getenv('DB_PORT'),
+            database=os.getenv('DB_NAME'),
+            sharesObj=self
+        )
         self.readSharesInDB(readOnlyThosetoUpdate)
 
     def readSharesInDB(self, readOnlyThosetoUpdate=False):
