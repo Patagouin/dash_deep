@@ -1,3 +1,4 @@
+// assets/socket_loader.js
 // Load Socket.IO script dynamically
 const script = document.createElement('script');
 script.src = "https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js";

@@ -11,6 +11,11 @@ import Models.lstm as ls  # Mise à jour de l'importation
 from dotenv import load_dotenv  # Add this to load environment variables
 import os
 
+# Charger les variables d'environnement à partir du fichier .env
+env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
+load_dotenv(env_path)
+print(f"Loaded environment variables from: {env_path}")
+
 class Shares:
 
     def __init__(self, readOnlyThosetoUpdate=False):

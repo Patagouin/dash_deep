@@ -1,0 +1,22 @@
+Je voudrais que tu créé une petite arborescence de fichiers et de dossiers afin de tester des modèles de deep learning différents (en python).
+
+Premierement, je voudrais que tu me créée des données de test.
+
+Je travaille dans le domaine des cotations boursières minutes après minutes (disons de 9h à 17h attention au week-end).
+Pour une durée d'1 an au total.
+
+Pour créér ces données je voudrais  créér les fonctions de générations nécessaires, il faut que ce soit essentiellement des données aléatoires mais toute de même avec un signal faible et légèrement complexe
+qui soit présent. TU peux crééer plusieurs données avec des fonctions différentes. je veux une visualisation des données (je veux que tu utilises des dataframes pandas)
+
+Ensuite, je voudrais que tu me créée un modèle de deep learning qui soit capable de prédire à partir des 60 première minutes et des précédentes journées le cours une estimations du cours 1h,2h,3h,4h,5h après.
+
+Pour cela, tu vas utiliser plusieurs modèles de deep learning différents (LSTM, GRU, Transformer, etc.) avec beaucoup de variabilité :
+Nombre de couches LSTM (num_layers)
+Nombre d'unités par couche LSTM (units_{i})
+Taux d'apprentissage (learning_rate)
+Fonction de perte (loss)
+Nombre d'époques pour l'entraînement (epochs)
+Nombre d'époques pour le tuner (epochs_tuner)
+Taille du lot (batch_size)
+
+et tu vas comparer les performances de chaque modèle.

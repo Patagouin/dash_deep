@@ -17,6 +17,7 @@ function initializeSocket() {
     // Debug events
     socket.on('connect', () => {
         console.log('Socket connected!', socket.id);
+        socket.emit('message', 'Hello from client!');
         // Debug: Check if elements exist
         const textarea = document.getElementById('terminal_output');
         const progressBar = document.getElementById('progress_bar');

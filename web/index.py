@@ -11,6 +11,7 @@ layout = html.Div([
 ])
 
 # Ensure callbacks are defined after the layout
+print("Registering callback for page-content")  # Debugging print
 @app.callback(Output('page-content', 'children'),
               Input('url', 'pathname'))
 def display_page(pathname):

@@ -1,0 +1,10 @@
+# Ignorer tout
+*
+env/
+
+# Ne pas ignorer les dossiers, permettant de parcourir les dossiers pour trouver des fichiers .py et .ipynb
+!*/
+
+# Ne pas ignorer les fichiers Python et Jupyter Notebooks
+!*.py
+!*.ipynb

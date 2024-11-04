@@ -14,24 +14,28 @@ if ROOT_DIR not in sys.path:
 # Initialize the Flask server
 server = Flask(__name__)
 
+# Configure Flask using environment variables
+server.config['ENV'] = os.getenv('FLASK_ENV', 'production')
+server.config['DEBUG'] = os.getenv('FLASK_DEBUG', '0') == '1'
+
 # Initialize SocketIO with CORS settings and debug mode
 socketio = SocketIO(
     server,
     cors_allowed_origins="*",
     async_mode='threading',
-    logger=False,  # Désactiver le logger SocketIO
-    engineio_logger=False,  # Désactiver le logger Engine.IO
+    logger=True,  # Désactiver le logger SocketIO
+    engineio_logger=True,  # Désactiver le logger Engine.IO
     ping_timeout=60,
     ping_interval=25,
     always_connect=True,
-    debug=False  # Désactiver le mode debug
+    debug=True  # Désactiver le mode debug
 )
 
 # Initialize the Dash app
 app = dash.Dash(
     __name__,
     server=server,
-    suppress_callback_exceptions=True,
+    suppress_callback_exceptions=False,  # Désactiver temporairement pour voir les erreurs
     assets_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
 )
 
