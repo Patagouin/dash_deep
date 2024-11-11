@@ -23,12 +23,12 @@ socketio = SocketIO(
     server,
     cors_allowed_origins="*",
     async_mode='threading',
-    logger=True,  # Désactiver le logger SocketIO
-    engineio_logger=True,  # Désactiver le logger Engine.IO
+    logger=False,  # Désactiver le logger SocketIO
+    engineio_logger=False,  # Désactiver le logger Engine.IO
     ping_timeout=60,
     ping_interval=25,
     always_connect=True,
-    debug=True  # Désactiver le mode debug
+    debug=False  # Désactiver le mode debug
 )
 
 # Initialize the Dash app

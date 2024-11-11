@@ -5,7 +5,7 @@ import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output, State
 from web.components.navigation import create_navigation  # Importer le composant de navigation
-from web.app import app, shM, socketio
+from app import app, shM, socketio
 import Models.Shares as sm
 import Models.utils as ut
 import logging
@@ -197,7 +197,7 @@ def update_shares_in_background(check_duplicate):
                 socketio.emit('update_terminal', {'output': error_msg}, namespace='/')
 
         socketio.emit('update_terminal', {'output': 'Update process finished\n'}, namespace='/')
-
+        stop_update_flag = True
     except Exception as e:
         error_message = f"Error in background task: {str(e)}\n"
         socketio.emit('update_terminal', {'output': error_message}, namespace='/')

@@ -5,7 +5,6 @@ web/
 ├── apps/
 │   ├── dashboard.py
 │   ├── prediction.py
-│   ├── sharedFig.py
 │   ├── update.py
 │   ├── config.py
 ├── assets/
@@ -25,11 +24,10 @@ Models/
 ├── Shares.py
 ├── SqlCom.py
 ├── utils.py
+├── prediction_utils.py
 scripts/
 ├── update_data_launcher.py
 .vscode/
 ├── launch.json
 .env
 
-
-L'objectif tout d'abord, c'est de corriger les problèmes d'affichage de ma page web généré via flask et d'y ajouter des fonctionnalités que l'on verra par la suite.
