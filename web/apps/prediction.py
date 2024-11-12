@@ -56,20 +56,6 @@ layout = html.Div([
                     labelStyle={'color': '#4CAF50', 'marginRight': '20px'}
                 ),
             ], style={'display': 'inline-block', 'marginLeft': '20px'}),
-
-            # Dropdown pour la sélection des actions
-            html.Div([
-                dcc.Dropdown(
-                    id='prediction_dropdown',
-                    options=[
-                        {'label': '{}'.format(stock.symbol), 'value': stock.symbol} 
-                        for stock in sorted(shM.dfShares.itertuples(), key=lambda stock: stock.symbol)
-                    ],
-                    multi=True,
-                    placeholder="Sélectionner une action",
-                    style={'width': '200px'}
-                ),
-            ], style={'display': 'inline-block', 'marginLeft': '20px'})
         ], style={
             'display': 'flex',
             'alignItems': 'center',
@@ -111,6 +97,77 @@ layout = html.Div([
 
             # Container pour tous les contrôles
             html.Div([
+                # Sélection des actions
+                html.Div([
+                    html.Label('Sélection des Actions'),
+                    dcc.Dropdown(
+                        id='prediction_dropdown',
+                        options=[
+                            {'label': '{}'.format(stock.symbol), 'value': stock.symbol} 
+                            for stock in sorted(shM.dfShares.itertuples(), key=lambda stock: stock.symbol)
+                        ],
+                        multi=True,
+                        placeholder="Sélectionner une action",
+                        style={'width': '100%'}
+                    ),
+                ], style={
+                    'marginBottom': '20px',
+                    'backgroundColor': '#2E2E2E',
+                    'padding': '20px',
+                    'borderRadius': '8px'
+                }),
+
+                # Section pour les sliders de données (maintenant sur la même ligne)
+                html.Div([
+                    # Slider pour le nombre de jours
+                    html.Div([
+                        html.Label('Nombre de jours de données'),
+                        html.Div([
+                            dcc.Slider(
+                                id='training_days_slider',
+                                min=7,
+                                max=365,
+                                value=30,
+                                marks={
+                                    7: '7j',
+                                    30: '1m',
+                                    90: '3m',
+                                    180: '6m',
+                                    365: '1a'
+                                },
+                                tooltip={"placement": "bottom", "always_visible": True}
+                            ),
+                        ], style={'padding': '20px 0px'}),
+                    ], style={'flex': '1', 'marginRight': '20px'}),
+
+                    # Slider pour le ratio entrainement/test
+                    html.Div([
+                        html.Label('Ratio Entrainement/Test'),
+                        html.Div([
+                            dcc.Slider(
+                                id='train_test_ratio_slider',
+                                min=0.5,
+                                max=0.9,
+                                value=0.8,
+                                marks={
+                                    0.5: '50/50',
+                                    0.6: '60/40',
+                                    0.7: '70/30',
+                                    0.8: '80/20',
+                                    0.9: '90/10'
+                                },
+                                tooltip={"placement": "bottom", "always_visible": True}
+                            ),
+                        ], style={'padding': '20px 0px'}),
+                    ], style={'flex': '1'}),
+                ], style={
+                    'display': 'flex',
+                    'marginBottom': '20px',
+                    'backgroundColor': '#2E2E2E',
+                    'padding': '20px',
+                    'borderRadius': '8px'
+                }),
+
                 # Première ligne : paramètres de base
                 html.Div([
                     # Colonne Look Back X
@@ -233,7 +290,11 @@ layout = html.Div([
                         'borderRadius': '4px',
                         'cursor': 'pointer'
                     }
-                )
+                ),
+                html.Div(id='training-results', style={
+                    'marginTop': '10px',
+                    'color': '#4CAF50'
+                })
             ], style={
                 'textAlign': 'center',
                 'width': '100%'
@@ -260,25 +321,59 @@ layout = html.Div([
 })
 
 @app.callback(
-    Output('stock_graph', 'figure'),  # ID of the output component
-    Input('prediction_dropdown', 'value'),  # ID of the dropdown
-    Input('date_picker_range', 'start_date'),  # ID of the date picker (start date)
-    Input('date_picker_range', 'end_date'),  # ID of the date picker (end date)
-    Input('data_type_selector', 'value'),  # Capture the selected data type (All Data or Main Hours)
-    Input('normalize_checkbox', 'value'),  # Nouveau input pour la checkbox
-    Input('stock_graph', 'relayoutData'),  # Capture the current layout (zoom level)
-    Input('train_button', 'n_clicks'),  # Bouton pour entraîner le modèle
-    State('look_back_x', 'value'),
-    State('stride_x', 'value'),
-    State('nb_y', 'value'),
-    State('nb_units', 'value'),
-    State('layers', 'value'),
-    State('learning_rate', 'value'),
-    State('loss_function', 'value'),
+    Output('training_days_slider', 'max'),
+    Output('training_days_slider', 'marks'),
+    Input('prediction_dropdown', 'value')
 )
-def display_stock_graph(values, start_date, end_date, data_type, normalize_value, relayoutData,
-                       n_clicks, look_back_x, stride_x, nb_y, nb_units, layers, learning_rate, loss_function):
+def update_days_slider(selected_symbols):
+    if not selected_symbols:
+        return 365, {
+            7: '7j',
+            30: '1m',
+            90: '3m',
+            180: '6m',
+            365: '1a'
+        }
+    
+    # Calculer le nombre maximum de jours disponibles pour les actions sélectionnées
+    max_days = 0
+    for symbol in selected_symbols:
+        dfShares = shM.getRowsDfByKeysValues(['symbol'], [symbol])
+        if not dfShares.empty:
+            dfData = shM.getListDfDataFromDfShares(dfShares)[0]
+            if not dfData.empty:
+                days_available = (dfData.index.max() - dfData.index.min()).days
+                max_days = max(max_days, days_available)
+    
+    # Arrondir au multiple de 30 supérieur
+    max_days = min(((max_days + 29) // 30) * 30, 365)
+    
+    # Créer les marks dynamiquement
+    marks = {
+        7: '7j',
+        30: '1m',
+    }
+    
+    if max_days >= 90:
+        marks[90] = '3m'
+    if max_days >= 180:
+        marks[180] = '6m'
+    if max_days >= 365:
+        marks[365] = '1a'
+    
+    return max_days, marks
 
+# Callback pour le graphique (sans les sliders)
+@app.callback(
+    Output('stock_graph', 'figure'),
+    [Input('prediction_dropdown', 'value'),
+     Input('date_picker_range', 'start_date'),
+     Input('date_picker_range', 'end_date'),
+     Input('data_type_selector', 'value'),
+     Input('normalize_checkbox', 'value'),
+     Input('stock_graph', 'relayoutData')]
+)
+def display_stock_graph(values, start_date, end_date, data_type, normalize_value, relayoutData):
     if values is None or len(values) == 0:
         print("No values selected.")
         fig = go.FigureWidget()
@@ -296,60 +391,65 @@ def display_stock_graph(values, start_date, end_date, data_type, normalize_value
     else:
         dateBegin = dateLast - datetime.timedelta(days=7)
 
-    print("Date range:", dateBegin, "to", dateLast)
-
     # Création d'une figure vide avec un thème sombre
     fig = go.FigureWidget()
     fig.layout.template = 'plotly_dark'
-    fig.update_layout(hovermode="x unified")
-    fig.update_layout(hoverlabel=dict(
-        bgcolor='#FFFFFF',  # Fond blanc
-        font=dict(color='#000000'),  # Texte noir
-        bordercolor='#FFFFFF'  # Bordure blanche
-    ))
+    fig.layout.hovermode = "x unified"
     fig.update_layout(
+        hoverlabel=dict(
+            bgcolor='#FFFFFF',
+            font=dict(color='#000000'),
+            bordercolor='#FFFFFF'
+        ),
         legend=dict(
-            font=dict(color='#FFFFFF'),  # Texte de légende en blanc
-            bgcolor='rgba(0,0,0,0.5)',   # Fond semi-transparent
-            bordercolor='#FFFFFF'         # Bordure blanche
+            font=dict(color='#FFFFFF'),
+            bgcolor='rgba(0,0,0,0.5)',
+            bordercolor='#FFFFFF'
         )
     )
     fig.layout.title = 'Shares quots'
     
     # Récupération des données des actions sélectionnées
     dfShares = shM.getRowsDfByKeysValues(['symbol']*len(values), values, op='|')
-    print("DataFrame for selected values:", dfShares)
 
     if dfShares.empty:
         print("No data found for the selected symbols.")
         return fig
 
+    # Créer un ensemble pour suivre les symboles déjà ajoutés
+    added_symbols = set()
+
     # Récupération des données pour chaque action dans la plage de dates sélectionnée
     listDfData = shM.getListDfDataFromDfShares(dfShares, dateBegin, dateLast)
-    print("List of DataFrames:", listDfData)
 
     # Ajout des données au graphique
     for i, dfData in enumerate(listDfData):
-        if not dfData.empty:
-            print(f"Data for {values[i]}:", dfData)
+        if not dfData.empty and values[i] not in added_symbols:
+            added_symbols.add(values[i])
 
             # Get the open and close market times for the current stock
             open_time = dfShares.iloc[i].openMarketTime
             close_time = dfShares.iloc[i].closeMarketTime
 
-            # Filter data based on the selected data type (All Data or Main Hours)
+            # Filter data based on the selected data type
             if data_type == 'main':
-                # Filter out extended hours data using the stock's specific market hours
                 dfData = dfData.between_time(open_time.strftime('%H:%M'), close_time.strftime('%H:%M'))
 
-            # Mise à jour de la logique de normalisation
+            # Normalisation si nécessaire
             toNormalize = 'normalize' in normalize_value
-
-            if toNormalize and dfData['openPrice'][0] > 0:  # Normalisation si nécessaire
+            if toNormalize and dfData['openPrice'][0] > 0:
                 dfData['openPrice'] /= dfData['openPrice'][0]
-            fig.add_scatter(name=values[i], x=dfData.index.values, y=dfData['openPrice'].values)
-        else:
-            print(f"No data for {values[i]}")
+
+            # Convertir les données en format compatible avec JSON
+            x_values = dfData.index.astype(str).tolist()
+            y_values = dfData['openPrice'].astype(float).tolist()
+
+            fig.add_scatter(
+                name=values[i],
+                x=x_values,
+                y=y_values,
+                hovertemplate='%{y:.2f}<extra></extra>'
+            )
 
     # Apply the previous zoom level if available
     if relayoutData and 'xaxis.range[0]' in relayoutData and 'xaxis.range[1]' in relayoutData:
@@ -379,54 +479,86 @@ def display_stock_graph(values, start_date, end_date, data_type, normalize_value
                 yaxis_range=[y_min, y_max]
             )
 
-    # # Préparation des dictionnaires data_info et hps
-    # data_info = {
-    #     'symbol': values[0] if values else None,
-    #     'look_back_x': look_back_x,
-    #     'stride_x': stride_x,
-    #     'nb_y': nb_y,
-    #     'percent_train_test': 60,
-    #     'nb_days_to_take_dataset': 400,
-    #     'features': ['openPrice'],
-    # }
+    # Dans la fonction display_stock_graph, après la création des traces
 
-    # hps = {
-    #     'nb_units': nb_units,  # Maintenant une liste de valeurs
-    #     'layers': layers,      # Maintenant une liste de valeurs
-    #     'epochs': 50,
-    #     'epochs_tuner': 10,
-    #     'batch_size': 16,
-    #     'learning_rate': learning_rate,  # Maintenant une liste de valeurs
-    #     'loss': loss_function,
-    # }
+    # Calculons le nombre de jours entre les dates
+    nb_days = (dateLast - dateBegin).days
+    
+    # Calculons les intervalles
+    interval_labels_ms = 86400000 * max(1, nb_days // 20)    # Pour environ 20 labels
 
-    # # Chargement des données et préparation
-    # from Models import prediction_utils as pu
-    # shareObj = shM.dfShares[shM.dfShares['symbol'] == data_info['symbol']].iloc[0]
-    # data_info['shareObj'] = shareObj
+    fig.update_layout(
+        xaxis=dict(
+            showgrid=True,
+            gridcolor='rgba(128, 128, 128, 0.3)',
+            gridwidth=1,
+            griddash='dot',               # Style pointillé pour la grille
+            dtick=interval_labels_ms,      # Intervalle pour les labels
+            tickmode='linear',
+            tick0=dateBegin,
+            tickformat='%d/%m',
+            tickfont=dict(
+                color='#FFFFFF',
+                size=10
+            ),
+            tickangle=45,
+            # Ajout de lignes verticales supplémentaires via shapes
+            rangeslider=dict(visible=False)
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor='rgba(128, 128, 128, 0.2)'
+        )
+    )
 
-    # df = pu.get_and_clean_data(shM, shareObj, columns=data_info['features'])
-    # trainX, trainY, testX, testY = pu.create_train_test(df, data_info)
+    # Ajout des lignes verticales supplémentaires via shapes
+    interval_grid_ms = 86400000 * max(1, nb_days // 100)     # Pour environ 100 lignes verticales
+    shapes = []
+    current_date = dateBegin
+    while current_date <= dateLast:
+        shapes.append(dict(
+            type='line',
+            xref='x',
+            yref='paper',
+            x0=current_date,
+            x1=current_date,
+            y0=0,
+            y1=1,
+            line=dict(
+                color='rgba(128, 128, 128, 0.2)',
+                width=1,
+                dash='dot'
+            )
+        ))
+        current_date += datetime.timedelta(milliseconds=interval_grid_ms)
 
-    # # Entraînement du modèle uniquement si le bouton est cliqué
-    # if n_clicks > 0:
-    #     # Entraîner le modèle et obtenir les prédictions
-    #     model, history = pu.train_and_select_best_model(data_info, hps, trainX, trainY, testX, testY)
-
-    #     # Préparation des données pour la prédiction
-    #     X_pred = testX[-1:]  # Dernier échantillon de test
-    #     y_pred = model.predict(X_pred)
-
-    #     # Convertir y_pred en valeurs originales si nécessaire
-    #     # Ajouter les prédictions au graphique
-    #     future_times = [df.index[-1] + datetime.timedelta(minutes=data_info['stride_x'] * (i+1)) for i in range(nb_y)]
-    #     fig.add_scatter(
-    #         x=future_times,
-    #         y=y_pred.flatten(),
-    #         mode='markers',
-    #         name='Prédictions Futures',
-    #         marker=dict(color='red', size=10)
-    #     )
+    fig.update_layout(shapes=shapes)
 
     return fig
+
+# Nouveau callback pour l'entraînement du modèle
+@app.callback(
+    Output('training-results', 'children'),  # Il faudra ajouter ce div dans le layout
+    [Input('train_button', 'n_clicks')],
+    [State('prediction_dropdown', 'value'),
+     State('training_days_slider', 'value'),
+     State('train_test_ratio_slider', 'value'),
+     State('look_back_x', 'value'),
+     State('stride_x', 'value'),
+     State('nb_y', 'value'),
+     State('nb_units', 'value'),
+     State('layers', 'value'),
+     State('learning_rate', 'value'),
+     State('loss_function', 'value')]
+)
+def train_model(n_clicks, selected_symbols, training_days, train_test_ratio, 
+                look_back_x, stride_x, nb_y, nb_units, layers, learning_rate, loss_function):
+    if n_clicks is None or n_clicks == 0:
+        return ""
+    
+    # Logique d'entraînement du modèle ici
+    # ...
+    
+    return "Modèle entraîné avec succès!"
+
 print("App object in prediction.py:", id(app))
