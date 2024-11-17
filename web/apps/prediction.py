@@ -4,8 +4,10 @@ from dash.dependencies import Input, Output, State
 import dash_daq as daq
 import plotly.graph_objs as go
 from web.components.navigation import create_navigation  # Importer le composant de navigation
+import pandas as pd
 
 import datetime
+import random
 
 from app import app, shM
 
@@ -40,21 +42,42 @@ layout = html.Div([
 
             # Container pour tous les contrôles
             html.Div([
-                # Sélection des actions
+                # Sélection des actions et secteur d'activité (sur la même ligne)
                 html.Div([
-                    html.Label('Sélection des Actions'),
-                    dcc.Dropdown(
-                        id='prediction_dropdown',
-                        options=[
-                            {'label': '{}'.format(stock.symbol), 'value': stock.symbol} 
-                            for stock in sorted(shM.dfShares.itertuples(), key=lambda stock: stock.symbol)
-                        ],
-                        multi=True,
-                        placeholder="Sélectionner une action",
-                        style={'width': '100%'}
-                    ),
+                    # Sélection des actions
+                    html.Div([
+                        html.Label('Sélection des Actions'),
+                        dcc.Dropdown(
+                            id='prediction_dropdown',
+                            options=[
+                                {'label': 'All', 'value': 'All'},  # Add "All" option
+                                *[
+                                    {'label': '{}'.format(stock.symbol), 'value': stock.symbol} 
+                                    for stock in shM.dfShares.sort_values(by='symbol').itertuples()
+                                ]
+                            ],
+                            multi=True,
+                            placeholder="Sélectionner une action",
+                            style={'width': '100%'}
+                        ),
+                    ], style={'flex': '1', 'marginRight': '20px'}),  # Flexbox for equal width
+
+                    # Sélection du secteur d'activité
+                    html.Div([
+                        html.Label('Sélection du Secteur'),
+                        dcc.Dropdown(
+                            id='sector_dropdown',
+                            options=[
+                                {'label': sector, 'value': sector} 
+                                for sector in sorted(shM.dfShares['sector'].fillna('Non défini').unique())
+                            ],
+                            placeholder="Sélectionner un secteur",
+                            style={'width': '100%'}
+                        ),
+                    ], style={'flex': '1'}),  # Flexbox for equal width
                 ], style={
-                    'marginBottom': '0px',
+                    'display': 'flex',  # Flexbox container
+                    'marginBottom': '20px',
                     'backgroundColor': '#2E2E2E',
                     'padding': '20px',
                     'borderRadius': '8px'
@@ -250,9 +273,63 @@ layout = html.Div([
             'marginBottom': '20px'
         }),
 
+        # Nouvelle section pour les résultats du modèle
+        html.Div([
+            html.H4('Résultats du Modèle', style={
+                'marginBottom': '0px',
+                'padding': '20px',
+                'color': '#FF8C00'
+            }),
+
+            # Conteneur pour afficher les métriques et le graphe côte à côte
+            html.Div([
+                # Conteneur pour les métriques (2/3 de la largeur)
+                html.Div([
+                    html.Div(id='model_metrics', style={
+                        'color': '#4CAF50',
+                        'fontSize': '16px',
+                        'padding': '20px',
+                        'backgroundColor': '#2E2E2E',
+                        'borderRadius': '8px',
+                        'marginBottom': '20px'
+                    })
+                ], style={
+                    'flex': '2',  # 2/3 of the width
+                    'padding': '20px'
+                }),
+
+                # Graph for training and validation accuracy (1/3 of the width)
+                html.Div([
+                    dcc.Graph(
+                        id='accuracy_graph',
+                        config={'scrollZoom': False},
+                        style={'height': '50vh'}
+                    )
+                ], style={
+                    'flex': '1',  # 1/3 of the width
+                    'padding': '20px',
+                    'backgroundColor': '#2E2E2E',
+                    'borderRadius': '8px',
+                    'marginBottom': '20px'
+                })
+            ], style={
+                'display': 'flex',  # Flexbox container
+                'flexDirection': 'row',  # Horizontal layout
+                'width': '100%',
+                'backgroundColor': '#1E1E1E',
+                'borderRadius': '8px',
+                'marginBottom': '20px'
+            })
+        ], style={
+            'width': '100%',
+            'backgroundColor': '#1E1E1E',
+            'borderRadius': '8px',
+            'marginBottom': '20px'
+        }),
+
         # Section de visualisation
         html.Div([
-            html.H4('Visualisation des Données', style={
+            html.H4('Visualisation des Prédictions', style={
                 'marginBottom': '0px',  # Plus d'écart pour le deuxième sous-titre
                 'padding': '20px',
                 'color': '#FF8C00'
@@ -570,7 +647,8 @@ def display_stock_graph(values, start_date, end_date, data_type, normalize_value
 
 # Nouveau callback pour l'entraînement du modèle
 @app.callback(
-    Output('training-results', 'children'),  # Il faudra ajouter ce div dans le layout
+    [Output('training-results', 'children'),
+     Output('accuracy_graph', 'figure')],
     [Input('train_button', 'n_clicks')],
     [State('prediction_dropdown', 'value'),
      State('training_days_slider', 'value'),
@@ -586,11 +664,105 @@ def display_stock_graph(values, start_date, end_date, data_type, normalize_value
 def train_model(n_clicks, selected_symbols, training_days, train_test_ratio, 
                 look_back_x, stride_x, nb_y, nb_units, layers, learning_rate, loss_function):
     if n_clicks is None or n_clicks == 0:
-        return ""
-    
-    # Logique d'entraînement du modèle ici
-    # ...
-    
-    return "Modèle entraîné avec succès!"
+        return "", go.Figure()
+
+    # Simulate training process (replace with actual training logic)
+    epochs = 10
+    train_accuracy = []
+    val_accuracy = []
+    avg_percentage_diff = 0
+    correct_direction_percentage = 0
+
+    # Simulate training and validation accuracy over epochs
+    for epoch in range(epochs):
+        train_acc = random.uniform(0.7, 0.9)  # Simulated training accuracy
+        val_acc = random.uniform(0.6, 0.85)  # Simulated validation accuracy
+        train_accuracy.append(train_acc)
+        val_accuracy.append(val_acc)
+
+    # Simulate average percentage difference and correct directional predictions
+    avg_percentage_diff = random.uniform(1, 5)  # Simulated percentage difference
+    correct_direction_percentage = random.uniform(70, 90)  # Simulated correct direction percentage
+
+    # Create the accuracy graph
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=list(range(epochs)), y=train_accuracy, mode='lines', name='Training Accuracy'))
+    fig.add_trace(go.Scatter(x=list(range(epochs)), y=val_accuracy, mode='lines', name='Validation Accuracy'))
+    fig.update_layout(
+        title='Training and Validation Accuracy',
+        xaxis_title='Epoch',
+        yaxis_title='Accuracy',
+        template='plotly_dark'
+    )
+
+    # Display the results
+    results = [
+        html.P(f"Pourcentage moyen de différence: {avg_percentage_diff:.2f}%"),
+        html.P(f"Pourcentage de prédictions correctes: {correct_direction_percentage:.2f}%")
+    ]
+
+    return results, fig
+
+# Nouveau callback pour afficher les métriques du modèle
+@app.callback(
+    Output('model_metrics', 'children'),
+    [Input('train_button', 'n_clicks')],
+    [State('prediction_dropdown', 'value'),
+     State('training_days_slider', 'value'),
+     State('train_test_ratio_slider', 'value'),
+     State('look_back_x', 'value'),
+     State('stride_x', 'value'),
+     State('nb_y', 'value'),
+     State('nb_units', 'value'),
+     State('layers', 'value'),
+     State('learning_rate', 'value'),
+     State('loss_function', 'value')]
+)
+def display_model_metrics(n_clicks, selected_symbols, training_days, train_test_ratio, 
+                          look_back_x, stride_x, nb_y, nb_units, layers, learning_rate, loss_function):
+    if n_clicks is None or n_clicks == 0:
+        return "Aucun résultat disponible. Veuillez entraîner le modèle."
+
+    # Logique pour calculer les métriques du modèle
+    # Par exemple, on peut afficher la perte finale, l'exactitude, etc.
+    # Pour l'instant, nous allons simuler quelques métriques
+    metrics = {
+        'Perte finale': 0.025,
+        'Exactitude': '85%',
+        'Précision': '80%',
+        'Rappel': '75%'
+    }
+
+    # Formatage des métriques pour l'affichage
+    metrics_display = [
+        html.P(f"{key}: {value}") for key, value in metrics.items()
+    ]
+
+    return metrics_display
+
+# Callback to update shares based on selected sector
+@app.callback(
+    Output('prediction_dropdown', 'options'),
+    Input('sector_dropdown', 'value')
+)
+def update_shares_based_on_sector(selected_sector):
+    if selected_sector == 'Non défini':
+        # Filter the shares where sector is NaN
+        filtered_shares = shM.dfShares[shM.dfShares['sector'].isna()]
+    elif selected_sector:
+        # Filter the shares based on the selected sector
+        filtered_shares = shM.dfShares[shM.dfShares['sector'] == selected_sector]
+    else:
+        # If no sector is selected, use all shares
+        filtered_shares = shM.dfShares
+
+    # Sort the filtered shares by the 'symbol' column
+    sorted_shares = filtered_shares.sort_values(by='symbol')
+
+    # Generate the options for the dropdown, including the "All" option
+    return [{'label': 'All', 'value': 'All'}] + [
+        {'label': '{}'.format(stock.symbol), 'value': stock.symbol} 
+        for stock in sorted_shares.itertuples()
+    ]
 
 print("App object in prediction.py:", id(app))
