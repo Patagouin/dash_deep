@@ -58,3 +58,7 @@
     color: #666;
     display: inline-block;
 }
+
+.custom-slider .rc-slider {
+    padding: 0px 0px 0px !important;  /* Ajustez le padding ici */
+}

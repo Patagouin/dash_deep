@@ -9,6 +9,8 @@ from app import app, shM, socketio
 import Models.Shares as sm
 import Models.utils as ut
 import logging
+import os
+from web.apps.config import load_config  # Importer la fonction pour charger la configuration
 
 # Configure logging
 logging.basicConfig(
@@ -61,6 +63,12 @@ layout = html.Div([
         dcc.Checklist(
             id='check_duplicate',
             options=[{'label': 'Check duplicate', 'value': 'check_duplicate'}],
+            value=[],
+            style={'marginTop': '10px'}
+        ),
+        dcc.Checklist(
+            id='export_data',
+            options=[{'label': 'Export data after update', 'value': 'export_data'}],
             value=[],
             style={'marginTop': '10px'}
         ),
@@ -123,11 +131,12 @@ layout = html.Div([
     [Input('start_update', 'n_clicks'),
      Input('stop_update', 'n_clicks')],
     [State('check_duplicate', 'value'),
+     State('export_data', 'value'),
      State('update_state', 'data'),
      State('start_update', 'style'),
      State('stop_update', 'style')]
 )
-def handle_update_buttons(start_clicks, stop_clicks, check_duplicate, update_state, start_style, stop_style):
+def handle_update_buttons(start_clicks, stop_clicks, check_duplicate, export_data, update_state, start_style, stop_style):
     global stop_update_flag
     
     ctx = dash.callback_context
@@ -141,7 +150,7 @@ def handle_update_buttons(start_clicks, stop_clicks, check_duplicate, update_sta
     if button_id == 'start_update' and start_clicks and update_state == 'idle':
         stop_update_flag = False
         logging.info("Starting background task...")
-        socketio.start_background_task(update_shares_in_background, 'check_duplicate' in check_duplicate)
+        socketio.start_background_task(update_shares_in_background, 'check_duplicate' in check_duplicate, 'export_data' in export_data)
         
         start_style.update({'opacity': '0.6', 'cursor': 'not-allowed'})
         stop_style.update({'opacity': '1', 'cursor': 'pointer'})
@@ -159,7 +168,7 @@ def handle_update_buttons(start_clicks, stop_clicks, check_duplicate, update_sta
     
     return True, update_state, start_style, stop_style, False
 
-def update_shares_in_background(check_duplicate):
+def update_shares_in_background(check_duplicate, export_data):
     global stop_update_flag
     stop_update_flag = False
     
@@ -195,6 +204,14 @@ def update_shares_in_background(check_duplicate):
             except Exception as share_error:
                 error_msg = f"Error processing share {share.symbol}: {str(share_error)}\n"
                 socketio.emit('update_terminal', {'output': error_msg}, namespace='/')
+
+        # Exporter les données si la case est cochée
+        if export_data:
+            config_data = load_config()  # Charger la configuration
+            export_path = config_data.get("export_path", os.getcwd())  # Utiliser export_path depuis la configuration
+            from web.apps.config import export_database  # Importer la fonction d'exportation
+            export_message = export_database(1, export_path)  # Appeler la fonction d'exportation
+            socketio.emit('update_terminal', {'output': f'{export_message}\n'}, namespace='/')
 
         socketio.emit('update_terminal', {'output': 'Update process finished\n'}, namespace='/')
         stop_update_flag = True
