@@ -1,0 +1,9 @@
+{
+    "broker_type": "broker_a",
+    "broker_username": "",
+    "broker_password": "",
+    "broker_host": "localhost",
+    "broker_port": 5432,
+    "broker_database": "stocksprices",
+    "export_path": "Z:\\media_synchro\\BDD"
+} 
