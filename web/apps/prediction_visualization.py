@@ -13,6 +13,24 @@ def get_visualization_layout():
             'color': '#FF8C00'
         }),
         
+        # Performance Metrics Section
+        html.Div([
+            html.H5('Métriques de Performance', style={
+                'color': '#4CAF50',
+                'marginBottom': '10px'
+            }),
+            html.Div(id='performance-metrics', style={
+                'backgroundColor': '#2E2E2E',
+                'padding': '15px',
+                'borderRadius': '8px',
+                'marginBottom': '20px',
+                'fontFamily': 'monospace'
+            })
+        ], style={
+            'marginBottom': '20px',
+            'padding': '0 20px'
+        }),
+        
         # Visualization controls
         html.Div([
             # Date picker

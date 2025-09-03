@@ -1,56 +1,32 @@
 # app.py
-import sys
 import os
-from flask import Flask, send_from_directory
-import dash
+import diskcache
 from flask_socketio import SocketIO
-from Models import Shares as sm
+from dash import CeleryManager, DiskcacheManager, Dash
+from dash_extensions.enrich import DashProxy, MultiplexerTransform
 
-# Add the root directory to sys.path
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if ROOT_DIR not in sys.path:
-    sys.path.insert(0, ROOT_DIR)
+from Models.Shares import Shares
 
-# Initialize the Flask server
-server = Flask(__name__)
+# --- Background Callback Manager ---
+cache = diskcache.Cache("./cache")
+background_callback_manager = DiskcacheManager(cache)
 
-# Configure Flask using environment variables
-server.config['ENV'] = os.getenv('FLASK_ENV', 'production')
-server.config['DEBUG'] = os.getenv('FLASK_DEBUG', '0') == '1'
-
-# Initialize SocketIO with CORS settings and debug mode
-socketio = SocketIO(
-    server,
-    cors_allowed_origins="*",
-    async_mode='threading',
-    logger=False,  # Désactiver le logger SocketIO
-    engineio_logger=False,  # Désactiver le logger Engine.IO
-    ping_timeout=60,
-    ping_interval=25,
-    always_connect=True,
-    debug=False  # Désactiver le mode debug
-)
-
-# Initialize the Dash app
-app = dash.Dash(
+# --- App Instantiation ---
+shM = Shares()
+# Use DashProxy for compatibility with MultiplexerTransform and other extensions
+app = DashProxy(
     __name__,
-    server=server,
-    suppress_callback_exceptions=False,  # Désactiver temporairement pour voir les erreurs
-    assets_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
+    transforms=[MultiplexerTransform()],
+    background_callback_manager=background_callback_manager,
+    suppress_callback_exceptions=True,
+    external_stylesheets=['/assets/style.css']
 )
+server = app.server
+socketio = SocketIO(server, async_mode='threading')
 
-# Serve static files
-@server.route('/assets/<path:path>')
-def serve_static(path):
-    assets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
-    return send_from_directory(assets_dir, path)
-
-# Initialize the shM object
-shM = sm.Shares(readOnlyThosetoUpdate=False)
-
-# Expose the server variable for WSGI servers
+app.title = "Dash Deep"
 application = app.server
 
-# Import socket handlers
+# Import socket handlers at the end to avoid circular imports
 from sockets import socket_handlers
 

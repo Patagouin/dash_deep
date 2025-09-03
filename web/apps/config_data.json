@@ -5,5 +5,5 @@
     "broker_host": "localhost",
     "broker_port": 5432,
     "broker_database": "stocksprices",
-    "export_path": "Z:\\media_synchro\\BDD"
+    "export_path": "/projets/BDD"
 } 

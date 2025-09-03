@@ -1,5 +1,5 @@
 __pycache__
 obj/
 data/
-env/
+venv/
 .env

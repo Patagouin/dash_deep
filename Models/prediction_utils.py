@@ -6,13 +6,14 @@ import tensorflow as tf
 import tensorflow.keras as keras
 from sklearn.preprocessing import MinMaxScaler
 import datetime
-import utils as ut
+from . import utils as ut
 import math
 import random
 import keras_tuner as kt
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, LSTM, Dense, Lambda
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping, History
 
 # # Les fonctions
 
@@ -120,7 +121,7 @@ def directional_accuracy(y_true, y_pred):
     last_known_value = y_true[:, 0]
     # Repeat last_known_value to match the shape of y_true
     last_known_value = tf.expand_dims(last_known_value, axis=-1)
-    last_known_value = tf.tile(last_known_value, [1, y_true.shape[1]])
+    last_known_value = tf.tile(last_known_value, [1, tf.shape(y_true)[1]])
     true_direction = tf.math.sign(y_true - last_known_value)
     pred_direction = tf.math.sign(y_pred - last_known_value)
 
@@ -133,43 +134,17 @@ class CustomHyperband(kt.Hyperband):
         # Choisir aléatoirement entre 'val_loss' et 'directional_accuracy'
         objective = random.choice(['val_loss', 'directional_accuracy'])
         self.oracle.objective = kt.Objective(objective, direction='min' if objective == 'val_loss' else 'max')
-        results = super().run_trial(trial, *args, **kwargs)
+        results = super(CustomHyperband, self).run_trial(trial, *args, **kwargs)
         return results
 
-class CustomRandomSearch(RandomSearch):
+class CustomRandomSearch(kt.RandomSearch):
     def run_trial(self, trial, *args, **kwargs):
         # Choisir aléatoirement entre 'val_loss' et 'directional_accuracy'
         objective = random.choice(['val_loss', 'directional_accuracy'])
         self.oracle.objective = objective
-        super().run_trial(trial, *args, **kwargs)
+        super(CustomRandomSearch, self).run_trial(trial, *args, **kwargs)
 
 # la fermeture permet d'obtenir une fonction avec la bonne signature
-def build_model_closure(data_info, hps):
-
-    def build_model(hp):
-        model = keras.Sequential()
-        num_layers = hp.Choice('num_layers', values=hps['layers'])
-    
-        for i in range(num_layers):
-            units = hp.Choice(f'units_{i}', values=hps['nb_units'])
-            if i == 0:
-                model.add(keras.layers.LSTM(units, input_shape=(data_info['look_back_x'], len(data_info['features'])), return_sequences=(num_layers > 1)))
-            else:
-                model.add(keras.layers.LSTM(units, return_sequences=(i != num_layers - 1)))
-
-        model.add(keras.layers.Dense(data_info['nb_y']))
-
-        # Vous pouvez également optimiser le taux d'apprentissage
-        optimizer = keras.optimizers.Adam(hp.Choice('learning_rate', values=hps['learning_rate']))
-        return_type = data_info.get('return_type', 'yield') # par défaut yield
-        if return_type == 'yield':
-            model.compile(loss=hps['loss'], optimizer=optimizer, metrics=[directional_accuracy])
-        else:
-            model.compile(loss=hps['loss'], optimizer=optimizer)
-        return model
-    return build_model
-
-
 def build_model_closure(data_info, hps):
     """
     Crée une fermeture pour construire un modèle Keras avec des hyperparamètres.
@@ -197,10 +172,11 @@ def build_model_closure(data_info, hps):
         @return: Modèle Keras compilé.
         """
         # Définir le tenseur d'entrée
-        input_tensor = keras.layers.Input(shape=(data_info['look_back_x'], len(data_info['features'])))
+        input_tensor = Input(shape=(data_info['look_back_x'], len(data_info['features'])))
         
         # Extraction de last_known_value via une couche Lambda
-        aux_output = keras.layers.Lambda(lambda x: x[:,-1,0], name='aux_output')(input_tensor)
+        # Prend le dernier pas de temps de la première caractéristique comme référence
+        last_known_value = Lambda(lambda x: x[:, -1, 0], name='last_known_value')(input_tensor)
         
         # Initialiser x avec le tenseur d'entrée
         x = input_tensor
@@ -209,29 +185,30 @@ def build_model_closure(data_info, hps):
         num_layers = hp.Choice('num_layers', values=hps['layers'])
         for i in range(num_layers):
             units = hp.Choice(f'units_{i}', values=hps['nb_units'])
-            x = keras.layers.LSTM(units, return_sequences=(i != num_layers - 1))(x)
+            x = LSTM(units, return_sequences=(i != num_layers - 1))(x)
         
         # Ajouter la couche de sortie principale
-        main_output = keras.layers.Dense(data_info['nb_y'], name='main_output')(x)
+        main_output = Dense(data_info['nb_y'], name='main_output')(x)
         
         # Créer le modèle en spécifiant les entrées et les sorties
-        model = keras.models.Model(inputs=input_tensor, outputs=[main_output, aux_output])
+        # La sortie 'last_known_value' est utilisée pour calculer la directional_accuracy personnalisée
+        model = Model(inputs=input_tensor, outputs={'main_output': main_output, 'last_known_value': last_known_value})
         
         # Compiler le modèle
-        optimizer = keras.optimizers.Adam(hp.Choice('learning_rate', values=hps['learning_rate']))
+        optimizer = Adam(hp.Choice('learning_rate', values=hps['learning_rate']))
         return_type = data_info.get('return_type', 'value')
         
         if return_type == 'yield':
-            print ('yield')
-            model.compile(loss={'main_output': hps['loss'], 'aux_output': 'mse'}, optimizer=optimizer, metrics={'main_output': directional_accuracy})
-											   
-																		
+            model.compile(optimizer=optimizer,
+                          loss={'main_output': hps['loss']},
+                          metrics={'main_output': directional_accuracy})
         else:
-            model.compile(loss={'main_output': hps['loss'], 'aux_output': 'mse'}, optimizer=optimizer)
+            model.compile(optimizer=optimizer, loss={'main_output': hps['loss']})
         
         return model
 
     return build_model
+
 
 def tuner_results_to_dataframe(tuner):
     # Extraction des métriques et des hyperparamètres des essais
@@ -243,174 +220,100 @@ def tuner_results_to_dataframe(tuner):
         
         # Récupération des métriques pour l'essai actuel
         all_metrics = list(trial.metrics.metrics.keys())
-        print(f"Available metrics for trial {trial_id}: {all_metrics}")  # Pour déboguer
-
-        # Récupération de directional_accuracy
-        if 'directional_accuracy' in all_metrics:
-            metrics_history = trial.metrics.get_history('directional_accuracy')
-            val_dir_acc_best_value = max([entry.value for entry in metrics_history])
-        else:
-            val_dir_acc_best_value = None
-            print(f"directional_accuracy not available for trial {trial_id}")
-            
-        # Récupération de val_loss
-        if 'val_loss' in all_metrics:
-            val_loss_best_value = trial.metrics.get_best_value('val_loss')
-        else:
-            val_loss_best_value = None
-            print(f"val_loss not available for trial {trial_id}")
         
-        # Ajout des métriques et des hyperparamètres à la liste des résultats
+        # Récupération de directional_accuracy
+        da_values = trial.metrics.get_history('directional_accuracy')
+        val_da_values = trial.metrics.get_history('val_directional_accuracy')
+        
+        # Calcul de la moyenne de directional_accuracy sur les époques
+        avg_da = np.mean([m.value for m in da_values]) if da_values else None
+        avg_val_da = np.mean([m.value for m in val_da_values]) if val_da_values else None
+        
+        # Récupération de la perte
+        loss_values = trial.metrics.get_history('loss')
+        val_loss_values = trial.metrics.get_history('val_loss')
+        
+        # Calcul de la moyenne de la perte sur les époques
+        avg_loss = np.mean([m.value for m in loss_values]) if loss_values else None
+        avg_val_loss = np.mean([m.value for m in val_loss_values]) if val_loss_values else None
+        
+        # Enregistrement des résultats
         results.append({
             'trial_id': trial_id,
-            'directional_accuracy': val_dir_acc_best_value,
-            'val_loss': val_loss_best_value,
-            'hyperparameters': trial.hyperparameters.values
+            'hyperparameters': trial.hyperparameters.values,
+            'avg_directional_accuracy': avg_da,
+            'avg_val_directional_accuracy': avg_val_da,
+            'avg_loss': avg_loss,
+            'avg_val_loss': avg_val_loss,
+            'score': trial.score,
+            'status': trial.status
         })
-    
+        
     return pd.DataFrame(results)
 
-def train_and_select_best_model(data_info, hps, trainX, trainY, testX, testY):
-    """
-    Entraîne des modèles avec plusieurs configurations et sélectionne le meilleur.
-
-    Args:
-        data_info (dict): Informations sur les données.
-        hps (dict): Hyperparamètres à tester.
-        trainX, trainY: Données d'entraînement.
-        testX, testY: Données de validation.
-
-    Returns:
-        best_model: Le modèle entraîné avec les meilleures performances.
-        best_history: Historique d'entraînement du meilleur modèle.
-    """
-
-    # Construire le modèle à l'aide de Keras Tuner
-    build_model = build_model_closure(data_info, hps)
-
-    tuner = kt.RandomSearch(
-        build_model,
-        objective='val_loss',
-        max_trials=10,
-        executions_per_trial=1,
-        directory='tuner_dir',
-        project_name='tune_model'
+def train_and_select_best_model(data_info, hps, trainX, trainY, testX, testY, callbacks=None):
+    build_model_func = build_model_closure(data_info, hps)
+    
+    tuner = CustomRandomSearch(
+        build_model_func,
+        objective=kt.Objective("val_directional_accuracy", direction="max"),
+        max_trials=hps['max_trials'],
+        executions_per_trial=hps['executions_per_trial'],
+        directory=hps['directory'],
+        project_name=hps['project_name']
     )
-
-    tuner.search(trainX, trainY, epochs=hps['epochs_tuner'], validation_data=(testX, testY))
-
-    # Obtenir les meilleurs hyperparamètres
+    
+    search_callbacks = [EarlyStopping(monitor='val_loss', patience=hps['patience'])]
+    if callbacks:
+        search_callbacks.extend(callbacks)
+    
+    tuner.search(trainX, trainY, epochs=hps['epochs'], validation_data=(testX, testY), callbacks=search_callbacks)
+    
     best_hps = tuner.get_best_hyperparameters(num_trials=1)[0]
-
-    # Construire le modèle avec les meilleurs hyperparamètres et l'entraîner
-    best_model = build_model(best_hps)
-    best_history = best_model.fit(trainX, trainY, epochs=hps['epochs'], validation_data=(testX, testY))
-
-    return best_model, best_history
-
-def train_with_hyperband(data_info, hps, trainX, trainY, testX, testY):
-    """
-    Utilise un LSTM avec la stratégie Hyperband pour trouver les meilleurs hyperparamètres.
-
-    Args:
-        data_info (dict): Informations sur les données.
-            - 'look_back_x': Nombre de pas de temps à regarder en arrière.
-            - 'features': Liste des noms de caractéristiques.
-            - 'nb_y': Nombre de caractéristiques de sortie.
-            - 'return_type': Type de retour ('yield' ou 'value').
-        hps (dict): Hyperparamètres à tester.
-            - 'nb_units': Liste du nombre possible d'unités par couche.
-            - 'layers': Liste du nombre possible de couches.
-            - 'learning_rate': Liste des taux d'apprentissage possibles.
-            - 'loss': Fonction de perte à utiliser.
-            - 'epochs_tuner': Nombre d'époques pour le tuner.
-            - 'batch_size': Taille des lots.
-        trainX, trainY: Données d'entraînement.
-        testX, testY: Données de validation.
-
-    Returns:
-        best_model: Le modèle entraîné avec les meilleures performances.
-        best_hps: Les meilleurs hyperparamètres trouvés.
-        tuner: L'objet tuner contenant les résultats de la recherche.
-    """
-
-    def build_model(hp):
-        """
-        Construit un modèle LSTM basé sur les hyperparamètres donnés.
-
-        Args:
-            hp: Objet d'hyperparamètres de Keras Tuner.
-
-        Returns:
-            Un modèle Keras compilé.
-        """
-        input_tensor = Input(shape=(data_info['look_back_x'], len(data_info['features'])))
-        
-        # Extraction de last_known_value via une couche Lambda
-        aux_output = Lambda(lambda x: x[:, -1, 0], name='aux_output')(input_tensor)
-        
-        x = input_tensor
-        num_layers = hp.Choice('num_layers', values=hps['layers'])
-        for i in range(num_layers):
-            units = hp.Choice(f'units_{i}', values=hps['nb_units'])
-            x = LSTM(units, return_sequences=(i != num_layers - 1))(x)
-        
-        main_output = Dense(data_info['nb_y'], name='main_output')(x)
-        
-        model = Model(inputs=input_tensor, outputs=[main_output, aux_output])
-        
-        optimizer = Adam(hp.Choice('learning_rate', values=hps['learning_rate']))
-        return_type = data_info.get('return_type', 'value')
-        
-        if return_type == 'yield':
-            model.compile(
-                loss={'main_output': hps['loss'], 'aux_output': 'mse'},
-                optimizer=optimizer,
-                metrics={'main_output': directional_accuracy}
-            )
-        else:
-            model.compile(
-                loss={'main_output': hps['loss'], 'aux_output': 'mse'},
-                optimizer=optimizer
-            )
-        
-        return model
-
-    # Configurer le tuner Hyperband
-    tuner = kt.Hyperband(
-        build_model,
-        objective='val_loss',
-        max_epochs=hps['epochs_tuner'],
-        factor=3,
-        directory='hyperband_dir',
-        project_name='lstm_hyperband'
-    )
-
-    # Définir un callback pour arrêter tôt si les performances ne s'améliorent pas
-    stop_early = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
-
-    # Lancer la recherche d'hyperparamètres
-    tuner.search(
-        trainX, trainY,
-        validation_data=(testX, testY),
-        epochs=hps['epochs_tuner'],
-        batch_size=hps['batch_size'],
-        callbacks=[stop_early]
-    )
-
-    # Obtenir les meilleurs hyperparamètres
-    best_hps = tuner.get_best_hyperparameters(num_trials=1)[0]
-
-    # Construire le modèle avec les meilleurs hyperparamètres
     best_model = tuner.hypermodel.build(best_hps)
 
-    # Entraîner le modèle avec les meilleurs hyperparamètres
-    history = best_model.fit(
-        trainX, trainY,
-        validation_data=(testX, testY),
-        epochs=hps['epochs'],
-        batch_size=hps['batch_size'],
-        callbacks=[stop_early]
+    tuner.trainX = trainX
+    tuner.trainY = trainY
+    tuner.testX = testX
+    tuner.testY = testY
+    
+    return best_model, best_hps, tuner
+
+def train_with_hyperband(data_info, hps, trainX, trainY, testX, testY):
+    build_model_func = build_model_closure(data_info, hps)
+
+    tuner = CustomHyperband(
+        build_model_func,
+        objective=kt.Objective("val_directional_accuracy", direction="max"),
+        max_epochs=hps['max_epochs'],
+        factor=hps['factor'],
+        hyperband_iterations=hps['hyperband_iterations'],
+        directory=hps['directory'],
+        project_name=hps['project_name']
     )
 
-    return best_model, best_hps, tuner
+    early_stopping = EarlyStopping(monitor='val_loss', patience=hps['patience'])
+
+    # Créer les données de validation
+    def create_validation_data(trainX, trainY, val_split=0.2):
+        split_point = int(len(trainX) * (1 - val_split))
+        valX = trainX[split_point:]
+        valY = trainY[split_point:]
+        trainX_new = trainX[:split_point]
+        trainY_new = trainY[:split_point]
+        return trainX_new, trainY_new, valX, valY
+
+    trainX, trainY, valX, valY = create_validation_data(trainX, trainY)
+    
+    tuner.search(trainX, trainY, epochs=hps['epochs'], validation_data=(valX, valY), callbacks=[early_stopping])
+
+    best_hps = tuner.get_best_hyperparameters(num_trials=1)[0]
+    model = tuner.hypermodel.build(best_hps)
+
+    # Récupérer l'historique de l'entraînement
+    history = model.fit(trainX, trainY, epochs=hps['epochs'], validation_data=(testX, testY))
+
+    # Faire des prédictions
+    predictions = model.predict(testX)
+
+    return model, history, predictions, tuner

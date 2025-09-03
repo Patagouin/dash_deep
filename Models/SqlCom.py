@@ -157,13 +157,28 @@ class SqlCom:
     def getQuots(self, shareObj, dateBegin, dateEnd):
         dataFrame = pd.DataFrame()
         try:
-            select_query = f''' SELECT * FROM "sharesInfos" LIMIT 0'''
-            self.cursor.execute(select_query)
-            self.connection.commit()
-            columns = [desc[0] for desc in self.cursor.description]
+            print(f"getQuots - Share: {shareObj.symbol} (ID: {shareObj.idShare})")
+            print(f"getQuots - Date range: {dateBegin} to {dateEnd}")
+            
             sub_query = f'''SELECT "idShare" FROM "sharesInfos" where "symbol"='{shareObj.symbol}' '''
-            select_query =f'''SELECT "time", "openPrice", "volume", "dividend" FROM "sharesPricesQuots" WHERE "idShare"= ({sub_query}) and "time" >= '{dateBegin}' and "time" < '{dateEnd}' ORDER BY "time" '''
-            dataFrame = pd.read_sql(select_query, self.connection, index_col=["time"], parse_dates=["time"], columns=columns)
+            select_query =f'''SELECT "time", "openPrice", "volume", "dividend" FROM "sharesPricesQuots" WHERE "idShare"= ({sub_query}) '''
+            
+            # Ajouter les conditions de date si spécifiées (au lieu de les mettre directement dans la chaîne avec des valeurs 'None')
+            if dateBegin is not None:
+                select_query += f" AND time >= '{dateBegin}'"
+            if dateEnd is not None:
+                select_query += f" AND time < '{dateEnd}'"
+                
+            select_query += " ORDER BY time"
+            
+            print(f"getQuots - SQL Query: {select_query}")
+            
+            dataFrame = pd.read_sql(select_query, self.connection, index_col=["time"], parse_dates=["time"])
+            
+            print(f"getQuots - Result shape: {dataFrame.shape}")
+            print(f"getQuots - Result is empty: {dataFrame.empty}")
+            if not dataFrame.empty:
+                print(f"getQuots - Result columns: {dataFrame.columns.tolist()}")
 
         except (Exception, psycopg2.DatabaseError) as error :
             print (f"Error while getting quots for {shareObj.symbol}: ", error)
@@ -799,3 +814,44 @@ class SqlCom:
 
         except Exception as e:
             return f"Error during export: {str(e)}"
+
+    def getQuotsMultiple(self, share_ids, dateBegin, dateEnd):
+        """Récupère les données pour plusieurs actions en une seule requête SQL."""
+        dataFrame = pd.DataFrame()
+        try:
+            # Convertir la liste d'IDs en string pour la requête SQL
+            share_ids_str = ','.join(map(str, share_ids))
+            
+            print(f"getQuotsMultiple - Share IDs: {share_ids}")
+            print(f"getQuotsMultiple - Date range: {dateBegin} to {dateEnd}")
+            
+            # Construire la requête SQL
+            select_query = f'''
+                SELECT "time", "openPrice", "volume", "dividend", "idShare" 
+                FROM "sharesPricesQuots" 
+                WHERE "idShare" IN ({share_ids_str})
+            '''
+            
+            # Ajouter les conditions de date si spécifiées
+            if dateBegin is not None:
+                select_query += f" AND time >= '{dateBegin}'"
+            if dateEnd is not None:
+                select_query += f" AND time < '{dateEnd}'"
+            
+            select_query += " ORDER BY time"
+            
+            print(f"getQuotsMultiple - SQL Query: {select_query}")
+            
+            # Exécuter la requête et récupérer les données
+            dataFrame = pd.read_sql(select_query, self.connection, index_col=["time"], parse_dates=["time"])
+            
+            print(f"getQuotsMultiple - Result shape: {dataFrame.shape}")
+            print(f"getQuotsMultiple - Result is empty: {dataFrame.empty}")
+            if not dataFrame.empty:
+                print(f"getQuotsMultiple - Result columns: {dataFrame.columns.tolist()}")
+                print(f"getQuotsMultiple - Unique idShare values: {dataFrame['idShare'].unique()}")
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(f"Error while getting multiple quots: ", error)
+        
+        return dataFrame

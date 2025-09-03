@@ -62,3 +62,22 @@
 .custom-slider .rc-slider {
     padding: 0px 0px 0px !important;  /* Ajustez le padding ici */
 }
+
+/* Styles pour la valeur sélectionnée dans les dropdowns */
+.Select-value {
+    color: #FF8C00 !important;
+}
+  
+.Select-value-label {
+    color: #FF8C00 !important;
+}
+  
+.Select--single > .Select-control .Select-value {
+    color: #FF8C00 !important;
+}
+  
+  /* S'assurer que le texte reste orange même quand le focus est ailleurs */
+.has-value.Select--single > .Select-control .Select-value .Select-value-label,
+.has-value.is-pseudo-focused.Select--single > .Select-control .Select-value .Select-value-label {
+    color: #FF8C00 !important;
+}

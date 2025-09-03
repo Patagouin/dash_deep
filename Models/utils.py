@@ -5,6 +5,7 @@ import yfinance as yf
 import pytz
 import numpy as np
 from collections import OrderedDict
+import os
 
 logType = {"Success":0, "Warning":1, "Error":2}
 
@@ -32,7 +33,10 @@ def logOperation(message, listErrors=[],  nbRowsWritten="ND", isTotal=False, new
     dateNow = datetime.datetime.now()
     dateNowString = dateNow.strftime("%a-%d-%b-%Y_%Hh%Mm%S")
     nameDay = dateNow.strftime('%A')
-    with open(f'{__file__}/../../data/logFile_{nameDay}.log', 'a+', newline='') as logFile:
+    log_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), '../../data'))
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, f'logFile_{nameDay}.log')
+    with open(log_path, 'a+', newline='') as logFile:
         maintainLogSize(logFile)
         str1 = f'{message}' + (f" ({nbRowsWritten}) rows downloaded" if (nbRowsWritten!="ND") else "")
         str1 = str1 + (" in total" if (isTotal) else "")
@@ -90,7 +94,8 @@ def downloadDataFromYahoo(share, beginDate='max', endDate='max'):
 
     curTicker = yf.Ticker(share.symbol)
     for date in listDate:
-        dfSlice = curTicker.history(interval='1m',start=date[0],end=date[1], rounding=False, actions=True, prepost=True)
+        dfSlice = curTicker.history(interval='1m',start=date[0],end=date[1], rounding=False, 
+                                    actions=True, prepost=True, auto_adjust=False)
         df = pd.concat([df, dfSlice])
         if beginDate == 'max':  #TODO UPDATE YFINANCE TO NOT HAVE TO CHECK THAT !!
             beginDateTmp = datetime.datetime.now()-datetime.timedelta(days=30, minutes=-1)
@@ -106,7 +111,8 @@ def downloadDataFromYahooByTickerName(tickerName, beginDate='max', endDate='now'
 
     curTicker = yf.Ticker(tickerName)
     for date in listDate:
-        dfSlice = curTicker.history(interval='1m',start=date[0],end=date[1], rounding=False, actions=True, prepost=True)
+        dfSlice = curTicker.history(interval='1m',start=date[0],end=date[1], rounding=False, 
+                                    actions=True, prepost=True, auto_adjust=False)
         df = pd.concat([df, dfSlice])
     return df
 

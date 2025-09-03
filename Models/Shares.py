@@ -6,7 +6,7 @@ import re
 
 import Models.SqlCom as sq
 import Models.utils as ut
-import Models.lstm as ls  # Mise à jour de l'importation
+import Models.prediction_utils as pred_ut
 
 from dotenv import load_dotenv  # Add this to load environment variables
 import os
@@ -120,30 +120,75 @@ class Shares:
 
         ut.logOperation("Success: All shares cotation updated")
 
+    def train_share_model(self, shareObj, data_info, hps, callbacks=None):
+        # 1. Récupérer et nettoyer les données
+        df = pred_ut.get_and_clean_data(self, shareObj, data_info['features'])
+        
+        # 2. Créer les ensembles d'entraînement et de test
+        trainX, trainY, testX, testY = pred_ut.create_train_test(df, data_info)
+
+        # Mettre à jour data_info avec le nombre de jours total
+        data_info['nb_days_total'] = (len(trainX) + len(testX)) // data_info.get('nb_quots_by_day', 1)
+
+        # 3. Entraîner et sélectionner le meilleur modèle
+        best_model, best_hps, tuner = pred_ut.train_and_select_best_model(
+            data_info, hps, trainX, trainY, testX, testY, callbacks=callbacks
+        )
+
+        # 4. Sauvegarder le modèle et les hyperparamètres
+        # Convertir le modèle en binaire pour le stockage
+        best_model.save("model.h5")
+        with open("model.h5", "rb") as file:
+            model_binary = file.read()
+        
+        # Enregistrer le modèle dans la base de données
+        self.__sqlObj.saveModel(shareObj, model_binary, best_hps.values)
+
+        return best_model, best_hps, tuner
+
     def updateAllSharesModels(self, df=None):
-        if (df == None):
+        if df is None:
             workingDf = self.dfShares
         else:
-            workingDf = df
+            workingDf = df.copy()
+
+        # Configuration des hyperparamètres et des données
+        hps = {
+            'layers': [1, 2],
+            'nb_units': [50, 100],
+            'learning_rate': [1e-2, 1e-3],
+            'loss': 'mean_squared_error',
+            'max_trials': 10,
+            'executions_per_trial': 1,
+            'directory': 'tuner_results',
+            'project_name': 'stock_prediction',
+            'patience': 5,
+            'epochs': 20
+        }
+        
+        data_info = {
+            'look_back_x': 60,
+            'stride_x': 1,
+            'nb_y': 5,
+            'features': ['cotation', 'volume'],
+            'return_type': 'yield',
+            'nb_days_to_take_dataset': 'max',
+            'percent_train_test': 80
+        }
 
         for curShare in workingDf.itertuples():
-            # Si l'heure de curShare.lastRecord est inférieure à l'heure de curShare.closeRichMarketTime
-            if curShare.lastRecord.time() < curShare.closeRichMarketTime:
-                # Change le jour pour jour n-1
-                end_date = curShare.lastRecord - datetime.timedelta(days=1)
-                # Maintient l'heure à curShare.closeRichMarketTime
-                end_date = end_date.replace(hour=curShare.closeRichMarketTime.hour, minute=curShare.closeRichMarketTime.minute, second=curShare.closeRichMarketTime.second)
-                data_quots = self.get_cotations_data_df(curShare, curShare.firstRecord, end_date)
-            else:
-                end_date = curShare.lastRecord
+            print(f"Training model for {curShare.symbol}...")
+            # Mettre à jour data_info avec l'objet share actuel
+            data_info['shareObj'] = curShare
+            
+            # Définir un nom de projet unique pour le tuner
+            hps['project_name'] = f'pred_{curShare.symbol}'
 
-            data_quots = self.get_cotations_data_df(curShare, curShare.firstRecord, end_date)
-
-            model, trainScore, testScore = ls.test_lstm(curShare, data_quots)
-            model.save("model.h5")
-            with open("model.h5", "rb") as file:
-                model_binary = file.read()
-            self.__sqlObj.saveModel(curShare, model, trainScore, testScore)
+            try:
+                self.train_share_model(curShare, data_info, hps)
+                print(f"Successfully trained and saved model for {curShare.symbol}")
+            except Exception as e:
+                print(f"Could not train model for {curShare.symbol}. Error: {e}")
 
 
     def updateShareCotations(self, shareObj, checkDuplicate=False):
@@ -203,11 +248,49 @@ class Shares:
             return workingDf[eval(expr)].drop_duplicates()
         return pd.DataFrame()
 
-    def getListDfDataFromDfShares(self, dfShare, dateBegin, dateEnd):
-        listDfData = []
-        for row in dfShare.itertuples():
-            listDfData.append(self.getDfDataRangeFromShare(row, dateBegin, dateEnd))
-        return listDfData
+    def getListDfDataFromDfShares(self, dfShare, dateBegin=None, dateEnd=None):
+        """Récupère les données pour plusieurs actions en une seule requête SQL."""
+        if dfShare.empty:
+            print("getListDfDataFromDfShares - dfShare is empty")
+            return []
+        
+        print(f"getListDfDataFromDfShares - dfShare shape: {dfShare.shape}")
+        print(f"getListDfDataFromDfShares - Date range: {dateBegin} to {dateEnd}")
+        if dateBegin is not None and dateEnd is not None:
+            print(f"getListDfDataFromDfShares - Date range length: {(dateEnd - dateBegin).days} days")
+        
+        # Si toutes les actions sont demandées en même temps, faire une seule requête
+        if len(dfShare) > 1:
+            print(f"getListDfDataFromDfShares - Using multiple shares query")
+            # Construire la liste des IDs d'actions
+            share_ids = dfShare['idShare'].tolist()
+            # Récupérer toutes les données en une seule requête
+            all_data = self.__sqlObj.getQuotsMultiple(share_ids, dateBegin, dateEnd)
+            
+            # Séparer les données par action
+            listDfData = []
+            for share in dfShare.itertuples():
+                print(f"getListDfDataFromDfShares - Processing share: {share.symbol}")
+                if all_data.empty:
+                    print(f"getListDfDataFromDfShares - No data for any share")
+                    listDfData.append(pd.DataFrame())
+                    continue
+                    
+                share_data = all_data[all_data['idShare'] == share.idShare].copy()
+                print(f"getListDfDataFromDfShares - Share {share.symbol} data shape: {share_data.shape}")
+                
+                if not share_data.empty:
+                    # Supprimer la colonne idShare car elle n'est plus nécessaire
+                    share_data = share_data.drop('idShare', axis=1)
+                listDfData.append(share_data)
+            
+            return listDfData
+        else:
+            print(f"getListDfDataFromDfShares - Using single share query")
+            # Pour une seule action, utiliser la méthode existante
+            data = self.getDfDataRangeFromShare(dfShare.iloc[0], dateBegin, dateEnd)
+            print(f"getListDfDataFromDfShares - Single share data shape: {data.shape}")
+            return [data]
 
     def getDfDataFromSerie(self, serieShare, dateBegin, dateEnd):
         return self.getDfDataRangeFromShare(serieShare, dateBegin, dateEnd)

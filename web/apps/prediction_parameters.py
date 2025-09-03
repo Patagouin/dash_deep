@@ -11,45 +11,74 @@ def get_parameters_layout():
 
         # Container for all controls
         html.Div([
-            # Selection of actions and sector (on the same line)
+            # Ligne avec à gauche: secteur au-dessus puis actions en-dessous, et à droite: liste + stats
             html.Div([
-                # Selection of actions
+                # Colonne gauche
                 html.Div([
-                    html.Label('Sélection des Actions', style={'paddingLeft': '0px'}),
-                    dcc.Dropdown(
-                        id='prediction_dropdown',
-                        options=[
-                            {'label': 'All', 'value': 'All'},  # Add "All" option
-                            *[
-                                {'label': '{}'.format(stock.symbol), 'value': stock.symbol} 
-                                for stock in shM.dfShares.sort_values(by='symbol').itertuples()
-                            ]
-                        ],
-                        multi=True,
-                        placeholder="Sélectionner une action",
-                        style={'width': '100%'}
-                    ),
-                ], style={'flex': '1', 'marginRight': '20px'}),  # Flexbox for equal width
+                    # Sélection du Secteur (en premier)
+                    html.Div([
+                        html.Label('Sélection du Secteur', style={'paddingLeft': '0px'}),
+                        dcc.Dropdown(
+                            id='sector_dropdown',
+                            options=[
+                                {'label': sector, 'value': sector}
+                                for sector in sorted(shM.dfShares['sector'].fillna('Non défini').unique())
+                            ],
+                            placeholder="Sélectionner un secteur",
+                            style={'width': '100%', 'color': '#FF8C00'}
+                        ),
+                    ], style={'marginBottom': '20px'}),
 
-                # Selection of sector
+                    # Sélection des Actions (en dessous)
+                    html.Div([
+                        html.Label('Sélection des Actions', style={'paddingLeft': '0px'}),
+                        dcc.Dropdown(
+                            id='prediction_dropdown',
+                            options=[
+                                {'label': 'All', 'value': 'All'},
+                                *[
+                                    {'label': '{}'.format(stock.symbol), 'value': stock.symbol}
+                                    for stock in shM.dfShares.sort_values(by='symbol').itertuples()
+                                ]
+                            ],
+                            multi=True,
+                            placeholder="Sélectionner une action",
+                            style={'width': '100%', 'color': '#FF8C00'}
+                        ),
+                    ]),
+                ], style={
+                    'flex': '2',
+                    'backgroundColor': '#2E2E2E',
+                    'padding': '20px',
+                    'borderRadius': '8px',
+                    'marginRight': '20px'
+                }),
+
+                # Colonne droite: Liste d'actions et statistiques
                 html.Div([
-                    html.Label('Sélection du Secteur', style={'paddingLeft': '0px'}),
+                    html.Label('Actions du Secteur', style={'paddingLeft': '0px'}),
                     dcc.Dropdown(
-                        id='sector_dropdown',
-                        options=[
-                            {'label': sector, 'value': sector} 
-                            for sector in sorted(shM.dfShares['sector'].fillna('Non défini').unique())
-                        ],
-                        placeholder="Sélectionner un secteur",
-                        style={'width': '100%'}
+                        id='stats_share_list',
+                        options=[],
+                        placeholder="Choisir une action",
+                        style={'width': '100%', 'color': '#FF8C00'}
                     ),
-                ], style={'flex': '1'}),  # Flexbox for equal width
+                    html.Div(id='share_stats_panel', style={
+                        'marginTop': '15px',
+                        'backgroundColor': '#1E1E1E',
+                        'padding': '15px',
+                        'borderRadius': '8px',
+                        'color': '#FFFFFF'
+                    })
+                ], style={
+                    'flex': '1',
+                    'backgroundColor': '#2E2E2E',
+                    'padding': '20px',
+                    'borderRadius': '8px'
+                })
             ], style={
-                'display': 'flex',  # Flexbox container
-                'marginBottom': '20px',
-                'backgroundColor': '#2E2E2E',
-                'padding': '20px',
-                'borderRadius': '8px'
+                'display': 'flex',
+                'marginBottom': '20px'
             }),
 
             # Sliders for data (now on the same line)
@@ -108,7 +137,7 @@ def get_parameters_layout():
                         value=30,
                         min=1,
                         step=1,
-                        style={'width': '100%'}
+                        style={'width': '100%', 'color': '#FF8C00'}
                     ),
                 ], style={'flex': '1', 'marginRight': '20px'}),
 
@@ -121,7 +150,7 @@ def get_parameters_layout():
                         value=1,
                         min=1,
                         step=1,
-                        style={'width': '100%'}
+                        style={'width': '100%', 'color': '#FF8C00'}
                     ),
                 ], style={'flex': '1', 'marginRight': '20px'}),
 
@@ -134,7 +163,7 @@ def get_parameters_layout():
                         value=1,
                         min=1,
                         step=1,
-                        style={'width': '100%'}
+                        style={'width': '100%', 'color': '#FF8C00'}
                     ),
                 ], style={'flex': '1'}),
             ], style={
@@ -155,7 +184,7 @@ def get_parameters_layout():
                         options=[{'label': str(i), 'value': i} for i in [16, 32, 64, 128, 256]],
                         value=64,
                         placeholder="Sélectionner le nombre d'unités",
-                        style={'width': '100%'}
+                        style={'width': '100%', 'color': '#FF8C00'}
                     ),
                 ], style={'flex': '1', 'marginRight': '20px'}),
 
@@ -167,7 +196,7 @@ def get_parameters_layout():
                         options=[{'label': str(i), 'value': i} for i in range(1, 6)],
                         value=2,
                         placeholder="Sélectionner le nombre de couches",
-                        style={'width': '100%'}
+                        style={'width': '100%', 'color': '#FF8C00'}
                     ),
                 ], style={'flex': '1', 'marginRight': '20px'}),
 
@@ -181,7 +210,7 @@ def get_parameters_layout():
                         ],
                         value=0.001,
                         placeholder="Sélectionner le taux d'apprentissage",
-                        style={'width': '100%'}
+                        style={'width': '100%', 'color': '#FF8C00'}
                     ),
                 ], style={'flex': '1'}),
             ], style={
@@ -204,7 +233,7 @@ def get_parameters_layout():
                     ],
                     value='mse',
                     placeholder="Sélectionner la fonction de perte",
-                    style={'width': '100%'}
+                    style={'width': '100%', 'color': '#FF8C00'}
                 ),
             ], style={
                 'marginBottom': '20px',

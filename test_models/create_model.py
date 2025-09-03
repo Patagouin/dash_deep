@@ -315,6 +315,355 @@ def tuner_results_to_dataframe(tuner):
     
     return pd.DataFrame(results)
 
+def build_model_for_search(data_info, hps):
+    """
+    Crée une fonction de construction de modèle pour la recherche d'hyperparamètres.
+    
+    Args:
+        data_info (dict): Informations sur les données
+        hps (dict): Hyperparamètres à explorer
+    
+    Returns:
+        function: Fonction de construction de modèle compatible avec Keras Tuner
+    """
+    def build_model(hp):
+        """Construit un modèle LSTM basé sur les hyperparamètres donnés."""
+        model = keras.Sequential()
+        num_layers = hp.Choice('num_layers', values=hps['layers'])
+        
+        for i in range(num_layers):
+            units = hp.Choice(f'units_{i}', values=hps['nb_units'])
+            if i == 0:
+                model.add(keras.layers.LSTM(units, 
+                                         input_shape=(data_info['look_back_x'], len(data_info['features'])), 
+                                         return_sequences=(num_layers > 1)))
+            else:
+                model.add(keras.layers.LSTM(units, return_sequences=(i != num_layers - 1)))
+        
+        model.add(keras.layers.Dense(data_info['nb_y']))
+        
+        optimizer = keras.optimizers.Adam(
+            hp.Choice('learning_rate', values=hps['learning_rate'])
+        )
+        
+        return_type = data_info.get('return_type', 'value')
+        if return_type == 'yield':
+            model.compile(loss=hps['loss'], optimizer=optimizer, metrics=[directional_accuracy])
+        else:
+            model.compile(loss=hps['loss'], optimizer=optimizer)
+            
+        return model
+    
+    return build_model
+
+def setup_search_directories(phase1_dir='adaptive_search_phase1', phase2_dir='adaptive_search_phase2'):
+    """
+    Prépare les répertoires pour stocker les résultats de la recherche d'hyperparamètres.
+    
+    Args:
+        phase1_dir (str): Nom du répertoire pour la phase d'exploration
+        phase2_dir (str): Nom du répertoire pour la phase de raffinement
+    
+    Returns:
+        tuple: Les chemins des répertoires pour les deux phases
+    """
+    import os
+    import shutil
+    
+    for directory in [phase1_dir, phase2_dir]:
+        if os.path.exists(directory):
+            shutil.rmtree(directory)
+    
+    return phase1_dir, phase2_dir
+
+def run_exploration_phase(build_model_fn, trainX, trainY, testX, testY, hps, phase1_dir):
+    """
+    Exécute la phase d'exploration avec RandomSearch pour identifier les régions prometteuses.
+    
+    Args:
+        build_model_fn (function): Fonction de construction de modèle
+        trainX, trainY: Données d'entraînement
+        testX, testY: Données de test
+        hps (dict): Hyperparamètres à explorer
+        phase1_dir (str): Répertoire pour stocker les résultats
+    
+    Returns:
+        tuple: Le tuner RandomSearch et les résultats en DataFrame
+    """
+    print("Phase 1: Exploration large avec RandomSearch")
+    
+    # Callback pour arrêter tôt si les performances ne s'améliorent pas
+    stop_early = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
+    
+    # Configurer le tuner RandomSearch
+    random_tuner = kt.RandomSearch(
+        build_model_fn,
+        objective='val_loss',
+        max_trials=20,  # Nombre d'essais pour la phase d'exploration
+        directory=phase1_dir,
+        project_name='phase1_exploration'
+    )
+    
+    # Lancer la recherche
+    random_tuner.search(
+        trainX, trainY,
+        validation_data=(testX, testY),
+        epochs=hps['epochs_tuner'] // 2,  # Moins d'époques pour la phase d'exploration
+        batch_size=hps['batch_size'],
+        callbacks=[stop_early]
+    )
+    
+    # Extraire les résultats
+    phase1_results = tuner_results_to_dataframe(random_tuner)
+    
+    return random_tuner, phase1_results
+
+def refine_hyperparameters(phase1_results, hps):
+    """
+    Affine l'espace des hyperparamètres en fonction des meilleurs résultats de la phase 1.
+    
+    Args:
+        phase1_results (DataFrame): Résultats de la phase d'exploration
+        hps (dict): Hyperparamètres initiaux
+    
+    Returns:
+        dict: Espace d'hyperparamètres raffiné
+    """
+    # Prendre les 5 meilleurs essais
+    top_trials = phase1_results.nsmallest(5, 'val_loss')
+    
+    # Réduire l'espace de recherche en fonction des meilleurs résultats
+    refined_hps = {}
+    
+    # Extraire les plages d'hyperparamètres les plus prometteuses
+    refined_hps['layers'] = list(set(top_trials['num_layers'].tolist()))
+    if not refined_hps['layers']:  # Si vide, utiliser les valeurs d'origine
+        refined_hps['layers'] = hps['layers']
+    
+    # Déterminer la plage d'unités pour chaque couche
+    refined_hps['nb_units'] = []
+    unit_columns = [col for col in top_trials.columns if 'units_' in col]
+    for col in unit_columns:
+        units = top_trials[col].dropna().tolist()
+        if units:
+            min_units = min(units)
+            max_units = max(units)
+            # Créer une plage plus restreinte autour des meilleures valeurs
+            refined_values = [u for u in hps['nb_units'] if min_units*0.5 <= u <= max_units*1.5]
+            if refined_values:
+                refined_hps['nb_units'].extend(refined_values)
+    
+    # S'assurer que nb_units contient des valeurs uniques et triées
+    refined_hps['nb_units'] = sorted(list(set(refined_hps['nb_units'])))
+    if not refined_hps['nb_units']:  # Si vide, utiliser les valeurs d'origine
+        refined_hps['nb_units'] = hps['nb_units']
+    
+    # Affiner les taux d'apprentissage
+    learning_rates = top_trials['learning_rate'].tolist()
+    if learning_rates:
+        min_lr = min(learning_rates)
+        max_lr = max(learning_rates)
+        refined_hps['learning_rate'] = [lr for lr in hps['learning_rate'] 
+                                      if min_lr*0.5 <= lr <= max_lr*2.0]
+    if not refined_hps.get('learning_rate'):  # Si vide, utiliser les valeurs d'origine
+        refined_hps['learning_rate'] = hps['learning_rate']
+    
+    # Conserver les autres hyperparamètres inchangés
+    refined_hps['loss'] = hps['loss']
+    refined_hps['batch_size'] = hps['batch_size']
+    refined_hps['epochs_tuner'] = hps['epochs_tuner']
+    
+    print("Espace d'hyperparamètres affiné:")
+    for key, value in refined_hps.items():
+        print(f"- {key}: {value}")
+    
+    return refined_hps
+
+def build_refined_model_for_search(data_info, refined_hps):
+    """
+    Crée une fonction de construction de modèle utilisant l'espace d'hyperparamètres raffiné.
+    
+    Args:
+        data_info (dict): Informations sur les données
+        refined_hps (dict): Hyperparamètres raffinés
+    
+    Returns:
+        function: Fonction de construction de modèle compatible avec Keras Tuner
+    """
+    def build_refined_model(hp):
+        """Construit un modèle LSTM basé sur les hyperparamètres raffinés."""
+        model = keras.Sequential()
+        num_layers = hp.Choice('num_layers', values=refined_hps['layers'])
+        
+        for i in range(num_layers):
+            units = hp.Choice(f'units_{i}', values=refined_hps['nb_units'])
+            if i == 0:
+                model.add(keras.layers.LSTM(units, 
+                                         input_shape=(data_info['look_back_x'], len(data_info['features'])), 
+                                         return_sequences=(num_layers > 1)))
+            else:
+                model.add(keras.layers.LSTM(units, return_sequences=(i != num_layers - 1)))
+        
+        model.add(keras.layers.Dense(data_info['nb_y']))
+        
+        optimizer = keras.optimizers.Adam(
+            hp.Choice('learning_rate', values=refined_hps['learning_rate'])
+        )
+        
+        return_type = data_info.get('return_type', 'value')
+        if return_type == 'yield':
+            model.compile(loss=refined_hps['loss'], optimizer=optimizer, metrics=[directional_accuracy])
+        else:
+            model.compile(loss=refined_hps['loss'], optimizer=optimizer)
+            
+        return model
+    
+    return build_refined_model
+
+def run_refinement_phase(build_refined_model_fn, trainX, trainY, testX, testY, refined_hps, phase2_dir):
+    """
+    Exécute la phase de raffinement avec Hyperband pour optimiser dans les régions prometteuses.
+    
+    Args:
+        build_refined_model_fn (function): Fonction de construction de modèle raffiné
+        trainX, trainY: Données d'entraînement
+        testX, testY: Données de test
+        refined_hps (dict): Hyperparamètres raffinés
+        phase2_dir (str): Répertoire pour stocker les résultats
+    
+    Returns:
+        tuple: Le tuner Hyperband, les meilleurs hyperparamètres et les résultats en DataFrame
+    """
+    print("Phase 2: Raffinement avec Hyperband")
+    
+    # Callback pour arrêter tôt si les performances ne s'améliorent pas
+    stop_early = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
+    
+    # Lancer Hyperband avec l'espace réduit
+    hyperband_tuner = kt.Hyperband(
+        build_refined_model_fn,
+        objective='val_loss',
+        max_epochs=refined_hps['epochs_tuner'],
+        factor=3,  # Facteur de réduction de Hyperband
+        directory=phase2_dir,
+        project_name='phase2_refinement'
+    )
+    
+    hyperband_tuner.search(
+        trainX, trainY,
+        validation_data=(testX, testY),
+        epochs=refined_hps['epochs_tuner'],
+        batch_size=refined_hps['batch_size'],
+        callbacks=[stop_early]
+    )
+    
+    # Obtenir les meilleurs hyperparamètres de la phase 2
+    best_hps = hyperband_tuner.get_best_hyperparameters(num_trials=1)[0]
+    
+    # Extraire les résultats
+    phase2_results = tuner_results_to_dataframe(hyperband_tuner)
+    
+    return hyperband_tuner, best_hps, phase2_results
+
+def build_and_train_final_model(build_refined_model_fn, best_hps, trainX, trainY, testX, testY, refined_hps):
+    """
+    Construit et entraîne le modèle final avec les meilleurs hyperparamètres.
+    
+    Args:
+        build_refined_model_fn (function): Fonction de construction de modèle raffiné
+        best_hps: Meilleurs hyperparamètres trouvés
+        trainX, trainY: Données d'entraînement
+        testX, testY: Données de test
+        refined_hps (dict): Hyperparamètres raffinés
+    
+    Returns:
+        model: Le modèle final entraîné
+    """
+    # Callback pour arrêter tôt si les performances ne s'améliorent pas
+    stop_early = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
+    
+    # Construire le modèle final avec les meilleurs hyperparamètres
+    best_model = build_refined_model_fn(best_hps)
+    
+    # Entraîner le modèle final
+    history = best_model.fit(
+        trainX, trainY,
+        validation_data=(testX, testY),
+        epochs=refined_hps['epochs_tuner'],
+        batch_size=refined_hps['batch_size'],
+        callbacks=[stop_early]
+    )
+    
+    return best_model
+
+def combine_search_results(phase1_results, phase2_results):
+    """
+    Combine les résultats des deux phases de recherche.
+    
+    Args:
+        phase1_results (DataFrame): Résultats de la phase d'exploration
+        phase2_results (DataFrame): Résultats de la phase de raffinement
+    
+    Returns:
+        DataFrame: Résultats combinés des deux phases
+    """
+    # Ajouter une colonne pour identifier la phase
+    phase1_results['phase'] = 'exploration'
+    phase2_results['phase'] = 'refinement'
+    
+    # Concaténer les résultats
+    all_results = pd.concat([phase1_results, phase2_results])
+    
+    return all_results
+
+def train_with_adaptive_search(data_info, hps, trainX, trainY, testX, testY):
+    """
+    Implémente une recherche d'hyperparamètres adaptative en deux phases:
+    1. Exploration large avec RandomSearch pour identifier les régions prometteuses
+    2. Raffinement avec Hyperband pour optimiser dans ces régions prometteuses
+    
+    Args:
+        data_info (dict): Informations sur les données (look_back_x, features, nb_y, etc.)
+        hps (dict): Hyperparamètres à tester (plage initiale large)
+        trainX, trainY: Données d'entraînement
+        testX, testY: Données de validation
+        
+    Returns:
+        best_model: Le modèle entraîné avec les meilleurs hyperparamètres
+        best_hps: Les meilleurs hyperparamètres trouvés
+        all_results: Résultats complets des deux phases de recherche
+    """
+    # Étape 1: Préparer les répertoires pour la recherche
+    phase1_dir, phase2_dir = setup_search_directories()
+    
+    # Étape 2: Créer la fonction de construction de modèle pour la phase 1
+    build_model_fn = build_model_for_search(data_info, hps)
+    
+    # Étape 3: Exécuter la phase d'exploration
+    random_tuner, phase1_results = run_exploration_phase(
+        build_model_fn, trainX, trainY, testX, testY, hps, phase1_dir
+    )
+    
+    # Étape 4: Raffiner l'espace des hyperparamètres
+    refined_hps = refine_hyperparameters(phase1_results, hps)
+    
+    # Étape 5: Créer la fonction de construction de modèle pour la phase 2
+    build_refined_model_fn = build_refined_model_for_search(data_info, refined_hps)
+    
+    # Étape 6: Exécuter la phase de raffinement
+    hyperband_tuner, best_hps, phase2_results = run_refinement_phase(
+        build_refined_model_fn, trainX, trainY, testX, testY, refined_hps, phase2_dir
+    )
+    
+    # Étape 7: Construire et entraîner le modèle final
+    best_model = build_and_train_final_model(
+        build_refined_model_fn, best_hps, trainX, trainY, testX, testY, refined_hps
+    )
+    
+    # Étape 8: Combiner les résultats des deux phases
+    all_results = combine_search_results(phase1_results, phase2_results)
+    
+    return best_model, best_hps, all_results
 
 # -
 
@@ -717,5 +1066,569 @@ fig.update_layout(
 
 fig.show()
 # -
+
+def setup_models_directory():
+    """
+    Crée un répertoire daté pour stocker les modèles entraînés.
+    
+    Returns:
+        str: Chemin du répertoire créé
+    """
+    import os
+    from datetime import datetime
+    
+    # Créer un dossier pour sauvegarder les modèles avec date et heure
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    models_dir = f"trained_models_{timestamp}"
+    if not os.path.exists(models_dir):
+        os.makedirs(models_dir)
+    
+    return models_dir
+
+def initialize_models_dict():
+    """
+    Initialise la structure du dictionnaire pour stocker les modèles.
+    
+    Returns:
+        tuple: Dictionnaires pour les modèles et les métriques
+    """
+    models_dict = {
+        'individual': {},
+        'sector': {},
+        'global': None
+    }
+    
+    metrics_dict = {
+        'individual': {},
+        'sector': {},
+        'global': None
+    }
+    
+    return models_dict, metrics_dict
+
+def group_data_by_sector(share_data_dict, sectors_mapping):
+    """
+    Regroupe les données par secteur.
+    
+    Args:
+        share_data_dict (dict): Dictionnaire des données d'actions
+        sectors_mapping (dict): Correspondance entre symboles et secteurs
+    
+    Returns:
+        dict: Données groupées par secteur
+    """
+    from collections import defaultdict
+    
+    sector_data = defaultdict(list)
+    for symbol, (data, shareObj) in share_data_dict.items():
+        sector = sectors_mapping.get(symbol, 'Unknown')
+        sector_data[sector].append((symbol, data, shareObj))
+    
+    return sector_data
+
+def train_individual_models(share_data_dict, data_info, hps, models_dir):
+    """
+    Entraîne des modèles pour chaque action individuelle.
+    
+    Args:
+        share_data_dict (dict): Dictionnaire des données d'actions
+        data_info (dict): Configuration pour les données
+        hps (dict): Hyperparamètres à tester
+        models_dir (str): Répertoire pour sauvegarder les modèles
+    
+    Returns:
+        tuple: Dictionnaires des modèles et métriques individuels
+    """
+    individual_models = {}
+    individual_metrics = {}
+    
+    for symbol, (data, shareObj) in share_data_dict.items():
+        print(f"\n-------- Entraînement du modèle pour l'action {symbol} --------")
+        
+        # Préparer les données pour cette action
+        local_data_info = data_info.copy()
+        local_data_info['shareObj'] = shareObj
+        
+        # Récupérer les données nettoyées
+        clean_data = get_and_clean_data(data, shareObj, local_data_info['features'])
+        
+        # Créer les ensembles d'entraînement et de test
+        trainX, trainY, testX, testY = create_train_test(clean_data, local_data_info)
+        
+        # Entraîner le modèle avec la recherche adaptative d'hyperparamètres
+        model, best_hps, results = train_with_adaptive_search(
+            local_data_info, hps, trainX, trainY, testX, testY
+        )
+        
+        # Évaluer les performances du modèle
+        evaluation = model.evaluate(testX, testY)
+        metrics = {
+            'test_loss': evaluation[0] if isinstance(evaluation, list) else evaluation,
+            'best_hyperparameters': best_hps.values,
+            'results_summary': {
+                'min_val_loss': results[results['phase'] == 'refinement']['val_loss'].min(),
+                'max_directional_accuracy': results[results['phase'] == 'refinement']['val_directional_accuracy'].max() 
+                if 'val_directional_accuracy' in results.columns else None
+            }
+        }
+        
+        # Sauvegarder le modèle
+        model_save_path = os.path.join(models_dir, f"individual_{symbol}")
+        model.save(model_save_path)
+        
+        # Stocker le modèle et ses métriques
+        individual_models[symbol] = {
+            'model': model,
+            'save_path': model_save_path,
+            'best_hps': best_hps
+        }
+        individual_metrics[symbol] = metrics
+    
+    return individual_models, individual_metrics
+
+def train_sector_models(sector_data, data_info, hps, models_dir):
+    """
+    Entraîne des modèles pour chaque secteur.
+    
+    Args:
+        sector_data (dict): Données groupées par secteur
+        data_info (dict): Configuration pour les données
+        hps (dict): Hyperparamètres à tester
+        models_dir (str): Répertoire pour sauvegarder les modèles
+    
+    Returns:
+        tuple: Dictionnaires des modèles et métriques par secteur
+    """
+    sector_models = {}
+    sector_metrics = {}
+    
+    for sector, shares in sector_data.items():
+        if len(shares) <= 1:
+            print(f"Secteur {sector} ignoré car il contient moins de 2 actions")
+            continue
+            
+        print(f"\n-------- Entraînement du modèle pour le secteur {sector} --------")
+        
+        # Combiner les données de toutes les actions du secteur
+        combined_data = pd.DataFrame()
+        shareObjs = []
+        
+        for symbol, data, shareObj in shares:
+            # Nettoyer les données de chaque action
+            clean_data = get_and_clean_data(data, shareObj, data_info['features'])
+            
+            # Ajouter des colonnes d'identification
+            clean_data['symbol'] = symbol
+            
+            # Combiner les données
+            if combined_data.empty:
+                combined_data = clean_data
+            else:
+                combined_data = pd.concat([combined_data, clean_data])
+            
+            shareObjs.append(shareObj)
+        
+        # Utiliser le premier ShareObj comme référence (à améliorer si nécessaire)
+        local_data_info = data_info.copy()
+        local_data_info['shareObj'] = shareObjs[0]
+        
+        # Créer les ensembles d'entraînement et de test
+        trainX, trainY, testX, testY = create_train_test(combined_data, local_data_info)
+        
+        # Entraîner le modèle avec la recherche adaptative d'hyperparamètres
+        model, best_hps, results = train_with_adaptive_search(
+            local_data_info, hps, trainX, trainY, testX, testY
+        )
+        
+        # Évaluer les performances du modèle
+        evaluation = model.evaluate(testX, testY)
+        metrics = {
+            'test_loss': evaluation[0] if isinstance(evaluation, list) else evaluation,
+            'best_hyperparameters': best_hps.values,
+            'results_summary': {
+                'min_val_loss': results[results['phase'] == 'refinement']['val_loss'].min(),
+                'max_directional_accuracy': results[results['phase'] == 'refinement']['val_directional_accuracy'].max() 
+                if 'val_directional_accuracy' in results.columns else None
+            }
+        }
+        
+        # Sauvegarder le modèle
+        model_save_path = os.path.join(models_dir, f"sector_{sector}")
+        model.save(model_save_path)
+        
+        # Stocker le modèle et ses métriques
+        sector_models[sector] = {
+            'model': model,
+            'save_path': model_save_path,
+            'best_hps': best_hps
+        }
+        sector_metrics[sector] = metrics
+    
+    return sector_models, sector_metrics
+
+def train_global_model(share_data_dict, data_info, hps, models_dir):
+    """
+    Entraîne un modèle global pour toutes les actions.
+    
+    Args:
+        share_data_dict (dict): Dictionnaire des données d'actions
+        data_info (dict): Configuration pour les données
+        hps (dict): Hyperparamètres à tester
+        models_dir (str): Répertoire pour sauvegarder les modèles
+    
+    Returns:
+        tuple: Le modèle global et ses métriques
+    """
+    print("\n-------- Entraînement du modèle global pour toutes les actions --------")
+    
+    # Combiner les données de toutes les actions
+    combined_data = pd.DataFrame()
+    all_symbols = []
+    
+    for symbol, (data, shareObj) in share_data_dict.items():
+        # Nettoyer les données de chaque action
+        clean_data = get_and_clean_data(data, shareObj, data_info['features'])
+        
+        # Ajouter des colonnes d'identification
+        clean_data['symbol'] = symbol
+        
+        # Combiner les données
+        if combined_data.empty:
+            combined_data = clean_data
+        else:
+            combined_data = pd.concat([combined_data, clean_data])
+        
+        all_symbols.append(symbol)
+    
+    # Utiliser le premier ShareObj comme référence (à améliorer si nécessaire)
+    first_shareObj = share_data_dict[all_symbols[0]][1]
+    local_data_info = data_info.copy()
+    local_data_info['shareObj'] = first_shareObj
+    
+    # Créer les ensembles d'entraînement et de test
+    trainX, trainY, testX, testY = create_train_test(combined_data, local_data_info)
+    
+    # Entraîner le modèle avec la recherche adaptative d'hyperparamètres
+    model, best_hps, results = train_with_adaptive_search(
+        local_data_info, hps, trainX, trainY, testX, testY
+    )
+    
+    # Évaluer les performances du modèle
+    evaluation = model.evaluate(testX, testY)
+    metrics = {
+        'test_loss': evaluation[0] if isinstance(evaluation, list) else evaluation,
+        'best_hyperparameters': best_hps.values,
+        'results_summary': {
+            'min_val_loss': results[results['phase'] == 'refinement']['val_loss'].min(),
+            'max_directional_accuracy': results[results['phase'] == 'refinement']['val_directional_accuracy'].max() 
+            if 'val_directional_accuracy' in results.columns else None
+        }
+    }
+    
+    # Sauvegarder le modèle
+    model_save_path = os.path.join(models_dir, "global_model")
+    model.save(model_save_path)
+    
+    # Stocker le modèle et ses métriques
+    global_model = {
+        'model': model,
+        'save_path': model_save_path,
+        'best_hps': best_hps
+    }
+    
+    return global_model, metrics
+
+def save_metrics_summary(models_dict, metrics_dict, models_dir):
+    """
+    Sauvegarde un résumé des métriques de tous les modèles.
+    
+    Args:
+        models_dict (dict): Dictionnaire des modèles
+        metrics_dict (dict): Dictionnaire des métriques
+        models_dir (str): Répertoire pour sauvegarder le résumé
+    
+    Returns:
+        str: Chemin du fichier CSV de résumé
+    """
+    # Créer un DataFrame résumant les métriques
+    metrics_summary = pd.DataFrame({
+        'model_type': ['global'] + 
+                     [f'sector_{s}' for s in metrics_dict['sector'].keys()] + 
+                     [f'individual_{s}' for s in metrics_dict['individual'].keys()],
+        'test_loss': [metrics_dict['global']['test_loss']] + 
+                    [metrics_dict['sector'][s]['test_loss'] for s in metrics_dict['sector'].keys()] + 
+                    [metrics_dict['individual'][s]['test_loss'] for s in metrics_dict['individual'].keys()]
+    })
+    
+    # Sauvegarder en CSV
+    csv_path = os.path.join(models_dir, 'metrics_summary.csv')
+    metrics_summary.to_csv(csv_path, index=False)
+    
+    return csv_path
+
+def create_models_hierarchy(share_data_dict, sectors_mapping, data_info, hps):
+    """
+    Crée une hiérarchie de modèles LSTM pour:
+    1. Chaque action individuelle
+    2. Chaque secteur (regroupement d'actions)
+    3. Un modèle global pour toutes les actions
+    
+    Args:
+        share_data_dict (dict): Dictionnaire avec pour clé le symbole de l'action et pour valeur 
+                               ses données (dataframe) et son objet ShareManager
+        sectors_mapping (dict): Dictionnaire avec pour clé le symbole de l'action et pour valeur son secteur
+        data_info (dict): Configuration pour la préparation des données et les modèles
+        hps (dict): Hyperparamètres à tester lors de la recherche
+        
+    Returns:
+        models_dict (dict): Dictionnaire des modèles entraînés organisé hiérarchiquement
+        metrics_dict (dict): Dictionnaire des métriques de performance pour chaque modèle
+    """
+    import os
+    
+    # Étape 1: Créer un répertoire pour sauvegarder les modèles
+    models_dir = setup_models_directory()
+    
+    # Étape 2: Initialiser les dictionnaires pour stocker les modèles et métriques
+    models_dict, metrics_dict = initialize_models_dict()
+    
+    # Étape 3: Regrouper les données par secteur
+    sector_data = group_data_by_sector(share_data_dict, sectors_mapping)
+    
+    print(f"Création de modèles pour {len(share_data_dict)} actions dans {len(sector_data)} secteurs")
+    
+    # Étape 4: Entraîner des modèles pour chaque action individuelle
+    individual_models, individual_metrics = train_individual_models(
+        share_data_dict, data_info, hps, models_dir
+    )
+    models_dict['individual'] = individual_models
+    metrics_dict['individual'] = individual_metrics
+    
+    # Étape 5: Entraîner des modèles pour chaque secteur
+    sector_models, sector_metrics = train_sector_models(
+        sector_data, data_info, hps, models_dir
+    )
+    models_dict['sector'] = sector_models
+    metrics_dict['sector'] = sector_metrics
+    
+    # Étape 6: Entraîner un modèle global pour toutes les actions
+    global_model, global_metrics = train_global_model(
+        share_data_dict, data_info, hps, models_dir
+    )
+    models_dict['global'] = global_model
+    metrics_dict['global'] = global_metrics
+    
+    # Étape 7: Sauvegarder un résumé des métriques
+    csv_path = save_metrics_summary(models_dict, metrics_dict, models_dir)
+    
+    print(f"\nTous les modèles ont été entraînés et sauvegardés dans {models_dir}")
+    print(f"Un résumé des métriques est disponible à: {csv_path}")
+    
+    return models_dict, metrics_dict
+
+def setup_database(db_config):
+    """
+    Configure et initialise la base de données pour stocker les modèles.
+    
+    Args:
+        db_config (dict): Configuration de la base de données
+        
+    Returns:
+        tuple: Connexion et curseur de base de données
+    """
+    import sqlite3
+    
+    print(f"Initialisation de la base de données {db_config['path']}...")
+    
+    # Connexion à la base de données (SQLite pour cette démo)
+    conn = sqlite3.connect(db_config['path'])
+    cursor = conn.cursor()
+    
+    # Création des tables nécessaires si elles n'existent pas
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS models (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_name TEXT NOT NULL,
+        model_type TEXT NOT NULL,
+        symbol TEXT,
+        sector TEXT,
+        timestamp TEXT NOT NULL,
+        save_path TEXT NOT NULL,
+        hyperparameters TEXT NOT NULL,
+        test_loss REAL NOT NULL,
+        val_loss REAL,
+        directional_accuracy REAL
+    )
+    ''')
+    
+    return conn, cursor
+
+def save_model_to_db(cursor, model_name, model_type, symbol, sector, timestamp, save_path, hyperparameters_json, metrics):
+    """
+    Sauvegarde les informations d'un modèle dans la base de données.
+    
+    Args:
+        cursor: Curseur de base de données
+        model_name (str): Nom du modèle
+        model_type (str): Type de modèle (global, sector, individual)
+        symbol (str): Symbole de l'action (si applicable)
+        sector (str): Secteur (si applicable)
+        timestamp (str): Date et heure de création
+        save_path (str): Chemin de sauvegarde du modèle
+        hyperparameters_json (str): Hyperparamètres au format JSON
+        metrics (dict): Métriques de performance du modèle
+    """
+    cursor.execute('''
+    INSERT INTO models (
+        model_name, model_type, symbol, sector, timestamp, save_path, 
+        hyperparameters, test_loss, val_loss, directional_accuracy
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        model_name,
+        model_type,
+        symbol,
+        sector,
+        timestamp,
+        save_path,
+        hyperparameters_json,
+        metrics['test_loss'],
+        metrics['results_summary'].get('min_val_loss'),
+        metrics['results_summary'].get('max_directional_accuracy')
+    ))
+
+def export_db_to_csv(conn, cursor, db_config):
+    """
+    Exporte le contenu de la base de données en CSV pour visualisation.
+    
+    Args:
+        conn: Connexion à la base de données
+        cursor: Curseur de base de données
+        db_config (dict): Configuration de la base de données
+        
+    Returns:
+        str: Chemin du fichier CSV exporté
+    """
+    import os
+    
+    # Exporter la structure de la base en CSV pour une visualisation facile
+    cursor.execute("SELECT * FROM models")
+    rows = cursor.fetchall()
+    
+    # Récupérer les noms de colonnes
+    column_names = [description[0] for description in cursor.description]
+    
+    # Créer un DataFrame pandas
+    db_data = pd.DataFrame(rows, columns=column_names)
+    
+    # Sauvegarder en CSV
+    csv_path = os.path.dirname(db_config['path']) + '/models_database_export.csv'
+    db_data.to_csv(csv_path, index=False)
+    
+    return csv_path
+
+def save_models_to_database(models_dict, metrics_dict, db_config=None):
+    """
+    Sauvegarde les poids des modèles et leurs métadonnées dans une base de données.
+    
+    Cette fonction est un squelette pour la deuxième phase du développement.
+    Elle devra être complétée avec la logique de connexion à la base de données.
+    
+    Args:
+        models_dict (dict): Dictionnaire des modèles organisé hiérarchiquement
+        metrics_dict (dict): Dictionnaire des métriques de performance pour chaque modèle
+        db_config (dict, optional): Configuration de la base de données. 
+                                    Si None, utilise les paramètres par défaut.
+    
+    Returns:
+        bool: True si la sauvegarde est réussie, False sinon
+    """
+    import json
+    import datetime
+    
+    # Configuration par défaut pour une base de données SQLite locale
+    if db_config is None:
+        db_config = {
+            'type': 'sqlite',
+            'path': 'models_database.db'
+        }
+    
+    print(f"Sauvegarde des modèles dans la base de données {db_config['path']}...")
+    
+    # Initialiser la base de données
+    conn, cursor = setup_database(db_config)
+    
+    # Timestamp pour l'enregistrement
+    timestamp = datetime.datetime.now().isoformat()
+    
+    # Fonction pour sérialiser un dictionnaire en JSON
+    def to_json(d):
+        return json.dumps(d, default=str)
+    
+    # Sauvegarde du modèle global
+    if models_dict['global'] is not None:
+        global_model = models_dict['global']
+        global_metrics = metrics_dict['global']
+        
+        save_model_to_db(
+            cursor,
+            'global_model',
+            'global',
+            None,
+            None,
+            timestamp,
+            global_model['save_path'],
+            to_json(global_model['best_hps'].values),
+            global_metrics
+        )
+    
+    # Sauvegarde des modèles par secteur
+    for sector, model_data in models_dict['sector'].items():
+        sector_metrics = metrics_dict['sector'][sector]
+        
+        save_model_to_db(
+            cursor,
+            f'sector_{sector}',
+            'sector',
+            None,
+            sector,
+            timestamp,
+            model_data['save_path'],
+            to_json(model_data['best_hps'].values),
+            sector_metrics
+        )
+    
+    # Sauvegarde des modèles individuels
+    for symbol, model_data in models_dict['individual'].items():
+        individual_metrics = metrics_dict['individual'][symbol]
+        
+        save_model_to_db(
+            cursor,
+            f'individual_{symbol}',
+            'individual',
+            symbol,
+            None,
+            timestamp,
+            model_data['save_path'],
+            to_json(model_data['best_hps'].values),
+            individual_metrics
+        )
+    
+    # Valider la transaction
+    conn.commit()
+    
+    # Exporter la structure de la base en CSV
+    csv_path = export_db_to_csv(conn, cursor, db_config)
+    
+    # Fermer la connexion à la base de données
+    conn.close()
+    
+    print(f"Sauvegarde des modèles terminée. Un export CSV est disponible à: {csv_path}")
+    return True
+
+# Dans une implémentation future, cette fonction pourrait être étendue pour:
+# 1. Supporter différents types de bases de données (PostgreSQL, MySQL, etc.)
+# 2. Optimiser le stockage des poids des modèles (compression, etc.)
+# 3. Ajouter des fonctionnalités de versioning des modèles
+# 4. Intégrer des mécanismes de récupération et de chargement des modèles depuis la base
 
 

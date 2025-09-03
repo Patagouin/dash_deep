@@ -1,6 +1,8 @@
 import os
 import sys      
-  
+import yfinance as yf
+import pandas as pd
+
 # Obtient le chemin absolu du répertoire contenant le script en cours d'exécution
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -11,13 +13,12 @@ project_dir = os.path.dirname(script_dir)
 sys.path.append(project_dir)
 
 import Models.Shares as sm
-
-
+#print(yf.__version__)
 
 if __name__ == "__main__":
 	shM = sm.Shares(readOnlyThosetoUpdate=True)
 	if len(sys.argv) > 1 and sys.argv[1] == "-checkDuplicate": 
 		shM.updateAllSharesCotation(checkDuplicate=True)
 	else:
-		shM.updateAllSharesCotation(checkDuplicate=True)
+		shM.updateAllSharesCotation(checkDuplicate=False)
 
