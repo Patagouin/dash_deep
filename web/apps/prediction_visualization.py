@@ -76,14 +76,15 @@ def get_visualization_layout():
                     }
                 )
             ], style={
-                'display': 'flex',
-                'justifyContent': 'center',
+                'display': 'grid',
+                'gridTemplateColumns': '1fr 1fr',
+                'justifyItems': 'center',
                 'alignItems': 'center',
                 'marginBottom': '20px',
                 'backgroundColor': '#2E2E2E',
                 'padding': '20px',
                 'borderRadius': '8px',
-                'gap': '50px'  # Space between elements
+                'gap': '50px'
             }),
 
             # Graph container

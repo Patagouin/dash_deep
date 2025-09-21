@@ -30,26 +30,28 @@ def get_results_layout():
                 dcc.Graph(
                     id='accuracy_graph',
                     config={'scrollZoom': False},
-                    style={'height': '50vh'}
+                    style={'height': '40vh'}
                 )
             ], style={
                 'flex': '1',  # 1/3 of the width
-                'padding': '20px',
+                'padding': '10px',
                 'backgroundColor': '#2E2E2E',
                 'borderRadius': '8px',
-                'marginBottom': '20px'
+                'marginBottom': '10px'
             })
         ], style={
-            'display': 'flex',  # Flexbox container
-            'flexDirection': 'row',  # Horizontal layout
+            'display': 'grid',
+            'gridTemplateColumns': '2fr 1fr',
             'width': '100%',
             'backgroundColor': '#1E1E1E',
             'borderRadius': '8px',
-            'marginBottom': '20px'
+            'marginBottom': '10px',
+            'gap': '10px',
+            'alignItems': 'start'
         })
     ], style={
         'width': '100%',
         'backgroundColor': '#1E1E1E',
         'borderRadius': '8px',
-        'marginBottom': '20px'
+        'marginBottom': '10px'
     }) 

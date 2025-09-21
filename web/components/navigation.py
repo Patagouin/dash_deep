@@ -12,6 +12,8 @@ def create_navigation():
             html.Div([
                 html.A('Dashboard', href='/dashboard', id='nav-dashboard', className='nav-link', **{'data-page': 'dashboard'}),
                 html.Span(' | ', className='nav-separator'),
+                html.A('Analyse', href='/analyse', id='nav-analyse', className='nav-link', **{'data-page': 'analyse'}),
+                html.Span(' | ', className='nav-separator'),
                 html.A('Prediction', href='/prediction', id='nav-prediction', className='nav-link', **{'data-page': 'prediction'}),
                 html.Span(' | ', className='nav-separator'),
                 html.A('Update', href='/update', id='nav-update', className='nav-link', **{'data-page': 'update'}),
@@ -26,6 +28,7 @@ def create_navigation():
 # Callback unique pour mettre à jour les classes CSS
 @app.callback(
     [Output('nav-dashboard', 'className'),
+     Output('nav-analyse', 'className'),
      Output('nav-prediction', 'className'),
      Output('nav-update', 'className'),
      Output('nav-config', 'className'),
@@ -38,20 +41,22 @@ def update_nav_style(pathname):
     active_class = 'nav-link active'
     
     # Initialiser toutes les classes comme inactives
-    classes = [base_class] * 5
+    classes = [base_class] * 6
     
     # Mettre à jour la classe du lien actif
     if pathname:
         pathname = pathname.lstrip('/')
         if pathname == '' or pathname == 'dashboard':
             classes[0] = active_class
-        elif pathname == 'prediction':
+        elif pathname == 'analyse':
             classes[1] = active_class
-        elif pathname == 'update':
+        elif pathname == 'prediction':
             classes[2] = active_class
-        elif pathname == 'config':
+        elif pathname == 'update':
             classes[3] = active_class
-        elif pathname == 'transaction':
+        elif pathname == 'config':
             classes[4] = active_class
+        elif pathname == 'transaction':
+            classes[5] = active_class
     
     return classes

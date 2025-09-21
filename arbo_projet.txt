@@ -1,0 +1,34 @@
+Voici la structure de mon projet (vue partielle):
+web/
+├── __init__.py
+├── app.py
+├── apps/
+│   ├── dashboard.py
+│   ├── prediction.py
+│   ├── update.py
+│   ├── config.py
+├── assets/
+│   ├── stylesheet.css
+│   ├── custom.css
+│   ├── socket.js
+│   ├── socket_loader.js
+│   ├── navigation.js
+├── sockets/
+│   ├── __init__.py
+│   ├── socket_handlers.py
+├── index.py
+├── main.py
+├── notifs.py
+Models/
+├── __init__.py
+├── lstm.py
+├── Shares.py
+├── SqlCom.py
+├── utils.py
+├── prediction_utils.py
+scripts/
+├── update_data_launcher.py
+.vscode/
+├── launch.json
+.env
+

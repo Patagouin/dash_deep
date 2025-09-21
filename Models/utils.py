@@ -173,7 +173,9 @@ def fillMissingValueDf(df, method='ffill'):
                                 end=df.index.max(),
                                 freq='1min'))
     if method == 'ffill':
-        df = df.fillna(method=method)
+        df = df.ffill()
+    elif method == 'bfill':
+        df = df.bfill()
     else:
         df = df.interpolate(method='linear')
 
@@ -740,6 +742,15 @@ def filter_and_interpolate(group, open_time, close_time):
     if group.empty:
         return pd.DataFrame()
 
+    # Supprimer les doublons d'index pour permettre le reindex
+    # Conserver la dernière occurrence si des timestamps sont dupliqués
+    if group.index.has_duplicates:
+        group = group[~group.index.duplicated(keep='last')]
+
+    # S'assurer d'un index tri croissant
+    if not group.index.is_monotonic_increasing:
+        group = group.sort_index()
+
     # Check if there are any values between open_time and open_time + 1 hour
     open_time_td = pd.to_timedelta(str(open_time))
     open_time_plus_1_hour_td = open_time_td + pd.Timedelta(hours=1)
@@ -753,10 +764,10 @@ def filter_and_interpolate(group, open_time, close_time):
     # Create a date_range with the open_time and close_time
     date_range = pd.date_range(group.index[0].normalize() + pd.to_timedelta(str(open_time)),
                                group.index[-1].normalize() + pd.to_timedelta(str(close_time)),
-                               freq='1T')
+                               freq='1min')
 
     # Reindex the group with the new date_range, forward-fill and backward-fill missing values
-    group = group.reindex(date_range).fillna(method='ffill').fillna(method='bfill')
+    group = group.reindex(date_range).ffill().bfill()
 
     # Interpolate the data using linear method
     data_df = group.interpolate(method='linear')
@@ -767,14 +778,26 @@ def filter_and_interpolate(group, open_time, close_time):
     return data_df
 
 def prepareData(shareObj, data_df, columns=['openPrice']):
+    # Protéger contre les DataFrame vides ou colonnes manquantes
+    if data_df is None or data_df.empty:
+        return pd.DataFrame(columns=columns)
+    # Ajouter les colonnes manquantes si besoin
+    for column in columns:
+        if column not in data_df.columns:
+            data_df[column] = np.nan
+    # Ne garder que les colonnes attendues
     data_df = data_df.loc[:, columns]
     for column in columns:
-        # Convert the column to numeric values, coercing errors to NaN
-        # Cela permet de s'assurer que toutes les valeurs sont numériques, et de gérer les erreurs en les transformant en NaN
         data_df[column] = pd.to_numeric(data_df[column], errors='coerce')
-    grouped = data_df.groupby(pd.Grouper(freq='D'))
-    filtered = grouped.apply(filter_and_interpolate, open_time=shareObj.openRichMarketTime, close_time=shareObj.closeRichMarketTime) # openRichMarketTime & closeRichMarketTime 
 
-    # Remove empty groups
-    #filtered = filtered.loc[~filtered.index.to_series().apply(lambda x: filtered.loc[x].empty)]
-    return filtered
+    result_frames = []
+    for _, group in data_df.groupby(pd.Grouper(freq='D')):
+        res = filter_and_interpolate(group, open_time=shareObj.openRichMarketTime, close_time=shareObj.closeRichMarketTime)
+        if res is not None and not res.empty:
+            result_frames.append(res)
+
+    if len(result_frames) > 0:
+        return pd.concat(result_frames)
+    else:
+        # Return empty DataFrame with the expected columns to avoid concat warnings
+        return pd.DataFrame(columns=columns)

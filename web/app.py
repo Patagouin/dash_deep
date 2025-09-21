@@ -2,6 +2,7 @@
 import os
 import diskcache
 from flask_socketio import SocketIO
+import logging
 from dash import CeleryManager, DiskcacheManager, Dash
 from dash_extensions.enrich import DashProxy, MultiplexerTransform
 
@@ -23,6 +24,9 @@ app = DashProxy(
 )
 server = app.server
 socketio = SocketIO(server, async_mode='threading')
+
+# Réduire les logs verbeux de werkzeug
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
 
 app.title = "Dash Deep"
 application = app.server

@@ -1,9 +1,53 @@
 {
-    "broker_type": "broker_a",
-    "broker_username": "",
-    "broker_password": "",
-    "broker_host": "localhost",
-    "broker_port": 5432,
-    "broker_database": "stocksprices",
-    "export_path": "/projets/BDD"
-} 
+  "broker_type": "broker_a",
+  "broker_username": "",
+  "broker_password": "",
+  "broker_host": "localhost",
+  "broker_port": 5432,
+  "broker_database": "stocksprices",
+  "export_path": "/projets/BDD",
+  "look_back_options": [30],
+  "stride_options": [ 1, 2],
+  "nb_y_options": [1, 2],
+  "nb_units_options": [ 32, 64, 128],
+  "layers_options": [1, 2,3],
+  "learning_rate_options": [0.0001, 0.001, 0.01],
+  "loss_options": [ "mse"],
+  "training_days_options": [30, 90],
+  "train_test_ratio_options": [70],
+  "model_type_options": ["lstm", "gru", "transformer"],
+  "epochs_options": [15, 30, 45, 60],
+  "transformer_dropout_options": [0.1, 0.2, 0.3, 0.4, 0.5],
+  "transformer_num_heads_options": [2, 4, 8, 16],
+  "transformer_ff_multiplier_options": [2, 4],
+  "presets": {
+    "1_choice_test": {
+      "train_share_list": [
+        "AAPL"
+      ],
+      "look_back_saved": [
+        30
+      ],
+      "stride_saved": [
+        1
+      ],
+      "nb_y_saved": [
+        1
+      ],
+      "nb_units_saved": [
+        32
+      ],
+      "layers_saved": [
+        1
+      ],
+      "learning_rate_saved": [
+        0.001
+      ],
+      "loss_saved": [
+        "mse"
+      ],
+      "training_days": 7,
+      "train_test_ratio": 70
+    }
+  }
+}

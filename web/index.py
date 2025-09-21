@@ -1,6 +1,7 @@
 #index.py
 from dash.dependencies import Input, Output  # Ajout des imports manquants
 from web.apps import dashboard, update, prediction, config, transaction  # Import the new config page
+from web.apps import analyse
 from dash import dcc, html
 from app import app
 
@@ -25,6 +26,9 @@ def display_page(pathname):
     elif pathname == '/prediction':
         print("Loading prediction layout")  # Debugging print
         return prediction.layout
+    elif pathname == '/analyse':
+        print("Loading analyse layout")
+        return analyse.layout
     elif pathname == '/config':  # Add the config page route
         print("Loading config layout")  # Debugging print
         return config.layout

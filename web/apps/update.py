@@ -11,6 +11,7 @@ import Models.utils as ut
 import logging
 import os
 from web.apps.config import load_config  # Importer la fonction pour charger la configuration
+from Models.SqlCom import SqlCom
 
 # Configure logging
 logging.basicConfig(
@@ -58,6 +59,23 @@ layout = html.Div([
                     'transition': 'background-color 0.3s'
                 },
                 className='stop-button'
+            ),
+            html.Button(
+                'Export Database Now',
+                id='export_db_now',
+                n_clicks=0,
+                style={
+                    'backgroundColor': '#2196F3',
+                    'color': 'white',
+                    'padding': '10px 20px',
+                    'border': 'none',
+                    'borderRadius': '5px',
+                    'cursor': 'pointer',
+                    'fontSize': '16px',
+                    'transition': 'background-color 0.3s',
+                    'marginLeft': '10px'
+                },
+                className='export-button'
             ),
         ], style={'marginBottom': '10px'}),
         dcc.Checklist(
@@ -117,6 +135,9 @@ layout = html.Div([
             'overflowY': 'scroll'
         }
     ),
+
+    # Statut d'export à la demande
+    html.Div(id='export_now_status', style={'color': 'green', 'textAlign': 'center'}),
 
     # Navigation standardisée avec séparateur
     create_navigation()
@@ -221,6 +242,34 @@ def update_shares_in_background(check_duplicate, export_data):
 
     finally:
         sys.stdout = old_stdout
+
+@app.callback(
+    Output('export_now_status', 'children'),
+    Input('export_db_now', 'n_clicks')
+)
+def export_db_now(n_clicks):
+    if not n_clicks:
+        return ''
+    try:
+        config_data = load_config()
+        export_path = config_data.get('export_path', os.getcwd())
+
+        sql_com = SqlCom(
+            user=os.getenv('DB_USER'),
+            password=os.getenv('DB_PASSWORD'),
+            host=os.getenv('DB_HOST'),
+            port=os.getenv('DB_PORT'),
+            database=os.getenv('DB_NAME'),
+            sharesObj=None
+        )
+
+        export_message = sql_com.export_data_to_csv(export_path)
+        socketio.emit('update_terminal', {'output': f'{export_message}\n'}, namespace='/')
+        return export_message
+    except Exception as e:
+        error_message = f"Error during export: {str(e)}"
+        socketio.emit('update_terminal', {'output': error_message + '\n'}, namespace='/')
+        return error_message
 
 @app.callback(
     Output('progress_bar', 'style'),

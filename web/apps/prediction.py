@@ -6,8 +6,8 @@ from web.apps.prediction_parameters import get_parameters_layout
 from web.apps.prediction_results import get_results_layout
 from web.apps.prediction_visualization import get_visualization_layout
 
-# Import the callbacks to ensure they are registered
-import web.apps.prediction_callbacks  # Import the callbacks file
+# Import the callbacks package to register all modularized callbacks
+import web.apps.prediction_callbacks  # noqa: F401
 
 layout = html.Div([
     # Fixed container for the top banner

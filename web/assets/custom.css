@@ -81,3 +81,85 @@
 .has-value.is-pseudo-focused.Select--single > .Select-control .Select-value .Select-value-label {
     color: #FF8C00 !important;
 }
+
+/* --- Dark theme for inputs, dropdowns, sliders --- */
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="search"],
+textarea,
+select {
+    background-color: #1E1E1E !important;
+    color: #FF8C00 !important;
+    border: 1px solid #444 !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: #888 !important;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+    outline: none !important;
+    border-color: #4CAF50 !important;
+    box-shadow: 0 0 0 1px #4CAF50 inset !important;
+}
+
+/* Dash React-Select (dcc.Dropdown legacy classes) */
+.Select-control {
+    background-color: #1E1E1E !important;
+    border-color: #444 !important;
+    color: #FF8C00 !important;
+}
+
+.Select-placeholder {
+    color: #888 !important;
+}
+
+.Select-menu-outer,
+.Select-menu {
+    background-color: #2E2E2E !important;
+    color: #FFFFFF !important;
+    border: 1px solid #444 !important;
+}
+
+.Select-option {
+    background-color: transparent !important;
+    color: #FFFFFF !important;
+}
+
+.Select-option.is-focused {
+    background-color: #333 !important;
+}
+
+.Select--multi .Select-value {
+    background-color: #333 !important;
+    border-color: #555 !important;
+    color: #FF8C00 !important;
+}
+
+.Select--multi .Select-value-icon {
+    border-right-color: #555 !important;
+}
+
+.is-focused .Select-control,
+.Select.is-open .Select-control {
+    border-color: #4CAF50 !important;
+    box-shadow: none !important;
+}
+
+/* Slider styles */
+.rc-slider-rail {
+    background-color: #333 !important;
+}
+
+.rc-slider-track {
+    background-color: #4CAF50 !important;
+}
+
+.rc-slider-handle {
+    border: 2px solid #4CAF50 !important;
+    background-color: #1E1E1E !important;
+}

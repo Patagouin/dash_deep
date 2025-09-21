@@ -3,6 +3,7 @@ import pandas as pd
 import csv
 import datetime
 import re
+import logging
 
 import Models.SqlCom as sq
 import Models.utils as ut
@@ -121,30 +122,46 @@ class Shares:
         ut.logOperation("Success: All shares cotation updated")
 
     def train_share_model(self, shareObj, data_info, hps, callbacks=None):
+        logging.info(f"[TRAIN|Shares] Start train_share_model for {shareObj.symbol}")
         # 1. Récupérer et nettoyer les données
+        logging.info(f"[TRAIN|Shares] get_and_clean_data: features={data_info['features']}")
         df = pred_ut.get_and_clean_data(self, shareObj, data_info['features'])
+        logging.info(f"[TRAIN|Shares] get_and_clean_data: shape={getattr(df, 'shape', None)}")
         
         # 2. Créer les ensembles d'entraînement et de test
+        logging.info("[TRAIN|Shares] create_train_test: start")
         trainX, trainY, testX, testY = pred_ut.create_train_test(df, data_info)
+        try:
+            logging.info(f"[TRAIN|Shares] create_train_test: trainX={len(trainX)} trainY={len(trainY)} testX={len(testX)} testY={len(testY)}")
+        except Exception:
+            logging.info("[TRAIN|Shares] create_train_test: shapes unavailable")
 
-        # Mettre à jour data_info avec le nombre de jours total
-        data_info['nb_days_total'] = (len(trainX) + len(testX)) // data_info.get('nb_quots_by_day', 1)
+        # Ne pas recalculer nb_days_total à partir du nombre de séquences (unités différentes)
+        # Se fier à la valeur calculée dans split_dataset_train_test
+        logging.info(f"[TRAIN|Shares] nb_days_total={data_info.get('nb_days_total')} nb_quots_by_day={data_info.get('nb_quots_by_day')}")
 
         # 3. Entraîner et sélectionner le meilleur modèle
+        logging.info(f"[TRAIN|Shares] train_and_select_best_model: start max_trials={hps.get('max_trials')} epochs={hps.get('epochs')}")
         best_model, best_hps, tuner = pred_ut.train_and_select_best_model(
             data_info, hps, trainX, trainY, testX, testY, callbacks=callbacks
         )
+        logging.info("[TRAIN|Shares] train_and_select_best_model: done")
 
-        # 4. Sauvegarder le modèle et les hyperparamètres
-        # Convertir le modèle en binaire pour le stockage
-        best_model.save("model.h5")
-        with open("model.h5", "rb") as file:
-            model_binary = file.read()
-        
-        # Enregistrer le modèle dans la base de données
-        self.__sqlObj.saveModel(shareObj, model_binary, best_hps.values)
-
+        # 4. Sauvegarde déléguée à l'appelant (après l'entraînement final)
         return best_model, best_hps, tuner
+
+    def save_model(self, shareObj, model, model_name, trainScore=None, testScore=None):
+        try:
+            logging.info("[TRAIN|Shares] save model: start")
+            model.save("model.keras")
+            with open("model.keras", "rb") as file:
+                model_binary = file.read()
+            logging.info(f"[TRAIN|Shares] saveModel to DB: name={model_name} train={trainScore} test={testScore}")
+            self.__sqlObj.saveModel(shareObj, model_name, model_binary, trainScore, testScore)
+            logging.info("[TRAIN|Shares] save model: done")
+        except Exception as e:
+            logging.exception("[TRAIN|Shares] Failed to save model")
+            raise
 
     def updateAllSharesModels(self, df=None):
         if df is None:
@@ -170,7 +187,7 @@ class Shares:
             'look_back_x': 60,
             'stride_x': 1,
             'nb_y': 5,
-            'features': ['cotation', 'volume'],
+            'features': ['openPrice', 'volume'],
             'return_type': 'yield',
             'nb_days_to_take_dataset': 'max',
             'percent_train_test': 80
@@ -367,6 +384,12 @@ class Shares:
 
     def computePotential(self, shareObj):
         self.__sqlObj.computePotential(shareObj)
+
+    def computePotentialForDates(self, shareObj, dates, potential_levels=None):
+        self.__sqlObj.computePotentialForDates(shareObj, dates, potential_levels)
+
+    def readPotentialsPercentTotal(self, shareObj, start_date, end_date, potential_levels=None):
+        return self.__sqlObj.readPotentialsPercentTotal(shareObj, start_date, end_date, potential_levels)
 
     def computeIsToUpdate(self, shareObj):
         nbRecordsMinByDay = 100

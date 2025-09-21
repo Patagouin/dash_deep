@@ -1,5 +1,6 @@
 # socket_handlers.py
 from app import socketio
+from flask import request
 from flask_socketio import emit
 import logging
 import sys
@@ -8,16 +9,19 @@ import sys
 logging.basicConfig(level=logging.INFO)
 
 @socketio.on('connect')
-def handle_connect(sid, environ):
+def handle_connect():
+    sid = request.sid
     logging.info(f"Socket connected: {sid}")
     socketio.emit('update_terminal', {'output': 'Socket.IO Connected!\n'}, namespace='/', room=sid)
 
 @socketio.on('disconnect')
-def handle_disconnect(sid):
+def handle_disconnect():
+    sid = request.sid
     logging.info(f"Socket disconnected: {sid}")
 
 @socketio.on('message')
-def handle_message(sid, message):
+def handle_message(message):
+    sid = request.sid
     logging.info(f"Received message from {sid}: {message}")
     socketio.emit('update_terminal', {'output': f'Received message: {message}\n'}, namespace='/', room=sid)
 

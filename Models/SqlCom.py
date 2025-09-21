@@ -182,7 +182,17 @@ class SqlCom:
 
         except (Exception, psycopg2.DatabaseError) as error :
             print (f"Error while getting quots for {shareObj.symbol}: ", error)
-            exit(-1)
+            # Tentative de reconnexion si la connexion est fermée/instable
+            try:
+                self.disconnect()
+                self.connect()
+                # Réessayer une seule fois
+                dataFrame = pd.read_sql(select_query, self.connection, index_col=["time"], parse_dates=["time"])
+                return dataFrame
+            except Exception as retry_error:
+                print(f"Retry failed for {shareObj.symbol}: ", retry_error)
+                # Retourner un DataFrame vide pour laisser l'appli continuer
+                return pd.DataFrame(columns=["openPrice","volume","dividend"]) 
         return dataFrame
 
 
@@ -437,19 +447,16 @@ class SqlCom:
 
     def getLastRecord(self, shareObj):
         try:
-            data = None
             select_query = f''' SELECT "time" FROM "sharesPricesQuots" WHERE "idShare"='{shareObj.idShare}' ORDER BY "time" DESC LIMIT 1 '''
             self.cursor.execute(select_query)
-            self.connection.commit()
             data = self.cursor.fetchall()
-            if data != [] and data != None :
-                dateLast = data[0][0] #LastRecord
-                return dateLast
+            if data and len(data) > 0 and data[0] is not None:
+                return data[0][0]
             return None
 
         except(Exception) as error:
             print (f"Error retrieving last record: ", error)
-            exit(-1)
+            return None
 
     ## LastRecord est aussi compute par la fonction computeNbRecordsAndAvgByDay
     def computeLastRecord(self, shareObj, dateLast="ToCompute"):
@@ -457,14 +464,14 @@ class SqlCom:
             if dateLast == "ToCompute":
                 dateLast = self.getLastRecord(shareObj)
 
-            if dateLast != [] and dateLast != None :
+            if dateLast is not None:
                 update_query = f''' UPDATE "sharesInfos" SET "lastRecord"='{dateLast}' WHERE "idShare"='{shareObj.idShare}';\n '''
                 self.cursor.execute(update_query)
                 self.connection.commit()
 
         except(Exception) as error:
-            print (f"Error while saving info lastRecord err: ", error)
-            exit(-1)
+            print ( f"Error while saving info lastRecord err: ", error)
+            # Ne pas stopper l'application
 
     # N'est pas à caculer à chaque maj des infos
     def computeFirstRecord(self, shareObj, dateFirst="ToCompute"):
@@ -503,12 +510,13 @@ class SqlCom:
         try:
             select_query = f'''SELECT "{column}", "time" FROM "sharesPricesQuots" WHERE "idShare"='{shareObj.idShare}' AND "time" >= '{start_date}' AND "time" <= '{end_date}' ORDER BY "time" ASC'''
             self.cursor.execute(select_query)
-            self.connection.commit()
+            # Ne pas commit avant fetch pour éviter ProgrammingError
             data = self.cursor.fetchall()
 
-            if data != [] and data is not None:
-                data_quots = np.array(data)[:, 0]
-                data_quots = data.astype(np.float)
+            if data is not None and len(data) > 0:
+                # data is a list of tuples [(price, time), ...]
+                data_arr = np.array(data, dtype=object)
+                data_quots = data_arr[:, 0].astype(float)
                 nan_indices = np.isnan(data_quots)
                 if np.any(nan_indices):
                     non_nan_indices = np.flatnonzero(~nan_indices)
@@ -516,7 +524,7 @@ class SqlCom:
                     interp_values = np.interp(nan_indices.nonzero()[0], non_nan_indices, data_quots[non_nan_indices])
                     # Remplacer les valeurs NaN par les valeurs interpolées
                     data_quots[nan_indices] = interp_values
-                data_time = np.array(data)[:, 1]
+                data_time = data_arr[:, 1]
             else:
                 print(f"No data found for idShare '{shareObj.symbol}' ('{shareObj.idShare}') in the specified date range {start_date} and {end_date}")
                 data_quots = np.array([])
@@ -526,7 +534,8 @@ class SqlCom:
 
         except (Exception, psycopg2.DatabaseError) as error:
             print(f"Error while fetching cotations data: ", error)
-            exit(-1)
+            # Ne pas tuer l'appli; retourner des tableaux vides
+            return np.array([]), np.array([])
 
 #semble pas valide
     def get_cotations_data_df(self, shareObj, start_date, end_date):
@@ -550,6 +559,22 @@ class SqlCom:
 
         except Exception as e:
             print(f"Erreur lors de l'extraction des données: {e}")
+            # Tentative de reconnexion et 2ème essai
+            try:
+                self.disconnect()
+                self.connect()
+                select_query = f'''SELECT * FROM "sharesPricesQuots" WHERE "idShare"='{shareObj.idShare}' AND "time" >= '{start_date}' AND "time" <= '{end_date}' ORDER BY "time" ASC'''
+                self.cursor.execute(select_query)
+                self.connection.commit()
+                data = self.cursor.fetchall()
+                column_names = [desc[0] for desc in self.cursor.description]
+                if data:
+                    data_df = pd.DataFrame(data, columns=column_names)
+                    data_df['time'] = pd.to_datetime(data_df['time'])
+                    data_df.set_index('time', inplace=True)
+                    return data_df
+            except Exception as retry_error:
+                print(f"Retry failed for {shareObj.symbol}: {retry_error}")
             return pd.DataFrame()
 
 
@@ -596,10 +621,12 @@ class SqlCom:
                         else:
                             insert_query += f''', NULL, NULL, NULL '''
                     insert_query += f''')\nON CONFLICT ("idShare", "date") DO UPDATE SET '''
+                    set_clauses = []
                     for i, (time, percentTotal, percent) in enumerate(zip(resultTime, resultPercentTotal, resultPercent)):
-                        # pas besoin de tester null vu que Excluded reprend la valeur qu'on a voulu mettre donc null
-                        insert_query += f''' "{str(potential_levels[i])}_time" = EXCLUDED."{str(potential_levels[i])}_time", "{str(potential_levels[i])}_percentTotal" = EXCLUDED."{str(potential_levels[i])}_percentTotal", "{str(potential_levels[i])}_percent" = EXCLUDED."{str(potential_levels[i])}_percent",'''
-                    insert_query = insert_query.rstrip(',')
+                        set_clauses.append(f'"{str(potential_levels[i])}_time" = EXCLUDED."{str(potential_levels[i])}_time"')
+                        set_clauses.append(f'"{str(potential_levels[i])}_percentTotal" = EXCLUDED."{str(potential_levels[i])}_percentTotal"')
+                        set_clauses.append(f'"{str(potential_levels[i])}_percent" = EXCLUDED."{str(potential_levels[i])}_percent"')
+                    insert_query += ', '.join(set_clauses)
 
                 
                     ## Do nothing  in case on conflict, ON CONFLICT("idShare", "date") DO UPDATE SET "potential"='{potential}' '''
@@ -608,7 +635,62 @@ class SqlCom:
 
         except(Exception) as error:
             print (f"Error while computing potential: ", error)
-            exit(-1)
+            # Ne pas tuer le process, laisser l'appelant gérer
+            raise
+
+    def computePotentialForDates(self, shareObj, dates, potential_levels=None):
+        try:
+            if potential_levels is None:
+                potential_levels = [30,15,10,7,5,4,3,2,1]
+            for date in dates:
+                start_of_day = pd.Timestamp(date).to_pydatetime().replace(hour=0, minute=0, second=0, microsecond=0)
+                end_of_day = start_of_day + datetime.timedelta(days=1, microseconds=-1)
+                cotations_data, time_data = self.get_cotations_data(shareObj, start_of_day, end_of_day, "openPrice")
+                if (cotations_data.size != 0):
+                    resultIndex, resultPercent, resultPercentTotal = ut.getPotential(cotations_data, potential_levels)
+                    resultTime = [
+                        [
+                            [time_data[index].strftime('%H:%M') for index in range_index]
+                            for range_index in potential
+                        ]
+                        for potential in resultIndex
+                    ]
+                    insert_query =  f''' INSERT INTO "sharesPotentials"("idShare", "date" '''
+                    for i in potential_levels:
+                        insert_query += f''', "{str(i)}_time", "{str(i)}_percentTotal", "{str(i)}_percent" '''
+                    insert_query += f''')\nVALUES ('{shareObj.idShare}', '{pd.Timestamp(date).date()}' '''
+                    for time, percentTotal, percent in zip(resultTime, resultPercentTotal, resultPercent):
+                        if (time != []):
+                            time_str = '{' + ','.join(['{' + ','.join(row) + '}' for row in time]) + '}'
+                            percent_str = '{' + ','.join(str(x) for x in percent) + '}'
+                            insert_query += f''', '{time_str}', '{percentTotal}',  '{percent_str}' '''
+                        else:
+                            insert_query += f''', NULL, NULL, NULL '''
+                    insert_query += f''')\nON CONFLICT ("idShare", "date") DO UPDATE SET '''
+                    set_clauses = []
+                    for i, (time, percentTotal, percent) in enumerate(zip(resultTime, resultPercentTotal, resultPercent)):
+                        set_clauses.append(f'"{str(potential_levels[i])}_time" = EXCLUDED."{str(potential_levels[i])}_time"')
+                        set_clauses.append(f'"{str(potential_levels[i])}_percentTotal" = EXCLUDED."{str(potential_levels[i])}_percentTotal"')
+                        set_clauses.append(f'"{str(potential_levels[i])}_percent" = EXCLUDED."{str(potential_levels[i])}_percent"')
+                    insert_query += ', '.join(set_clauses)
+                    self.cursor.execute(insert_query)
+                    self.connection.commit()
+        except(Exception) as error:
+            print (f"Error while computing potential for specific dates: ", error)
+            # Ne pas tuer le process, laisser l'appelant gérer
+            raise
+
+    def readPotentialsPercentTotal(self, shareObj, start_date, end_date, potential_levels=None):
+        try:
+            if potential_levels is None:
+                potential_levels = [1,2,3,4,5,7,10,15,30]
+            cols = ', '.join([f'"{lvl}_percentTotal"' for lvl in potential_levels])
+            select_query = f'''SELECT "date", {cols} FROM "sharesPotentials" WHERE "idShare"='{shareObj.idShare}' AND "date" >= '{pd.Timestamp(start_date).date()}' AND "date" <= '{pd.Timestamp(end_date).date()}' ORDER BY "date" ASC'''
+            df = pd.read_sql(select_query, self.connection)
+            return df
+        except(Exception) as error:
+            print (f"Error while reading potentials percentTotal: ", error)
+            return pd.DataFrame()
 
     # A revoir
     def discardUpdate(self, shareObj, nbRecordsMinByDay, nbDaysMax=30):
@@ -627,7 +709,8 @@ class SqlCom:
                 ut.logOperation(f"Pas de data pour {shareObj.symbol} ou lastRecord pas calculé")
         except(Exception) as error:
             print (f"Error while updating shares stats : ", error)
-            exit(-1)
+            # Ne pas tuer le process, laisser l'appelant gérer
+            raise
 
     def compute_frequence_cotation_via_graph(self, shareObj):
         select_query = f'''SELECT "time" FROM "sharesPricesQuots" WHERE "idShare"='{shareObj.idShare}' '''
@@ -767,14 +850,17 @@ class SqlCom:
 
     def saveModel(self, shareObj, modelName, modelBin, trainScore, testScore):
         try:
-            current_date = datetime.datetime.now
-            update_query = f'''INSERT INTO modelsDeepLearning ("id", "idShare", "model", "trainScore", "testScore", "date") 
-                            VALUES ('{modelName}', '{shareObj.idShare}', '{modelBin}', '{trainScore}', '{testScore}', '{current_date}' )
-                            ON CONFLICT ("id", "idShare", "model", "trainScore", "testScore", "date") 
-                            DO UPDATE
-                            SET "id" = EXCLUDED."id", "idShare" = EXCLUDED."idShare", "model" = EXCLUDED."model", "trainScore" = EXCLUDED."trainScore", "testScore" = EXCLUDED."testScore", "date" = EXCLUDED."date"'''
-
-            self.cursor.execute(update_query)
+            current_date = datetime.datetime.now()
+            # Utiliser des paramètres pour éviter les problèmes d'échappement et les injections
+            insert_query = '''
+                INSERT INTO "modelsDeepLearning" ("id", "idShare", "model", "trainScore", "testScore", "date")
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT DO NOTHING
+            '''
+            id_share_int = int(shareObj.idShare) if not isinstance(shareObj.idShare, int) else shareObj.idShare
+            train_score_f = float(trainScore) if trainScore is not None else None
+            test_score_f = float(testScore) if testScore is not None else None
+            self.cursor.execute(insert_query, (modelName, id_share_int, psycopg2.Binary(modelBin), train_score_f, test_score_f, current_date))
             self.connection.commit()
         except(Exception) as error:
             print (f"Error while updating model: {modelName} pour {shareObj.symbol}: ", error)
@@ -784,7 +870,12 @@ class SqlCom:
         try:
             # Générer dynamiquement le nom du fichier d'exportation avec la date et l'heure actuelles
             date_now = datetime.datetime.now().strftime("%Y_%m_%d_%Hh_%Mm")
-            export_file = os.path.join(export_path, f"auto_backup_stocksprices_{date_now}.dump")
+            # Normaliser et créer le dossier d'export s'il n'existe pas
+            normalized_export_dir = export_path.strip() if export_path else os.getcwd()
+            normalized_export_dir = os.path.expandvars(os.path.expanduser(normalized_export_dir))
+            os.makedirs(normalized_export_dir, exist_ok=True)
+
+            export_file = os.path.join(normalized_export_dir, f"auto_backup_stocksprices_{date_now}.dump")
 
             # Construire la commande pg_dump sans l'option --no-password
             pg_dump_command = [
@@ -808,6 +899,27 @@ class SqlCom:
 
             # Vérifier si la commande a réussi
             if result.returncode == 0:
+                # Supprimer les anciens fichiers d'export (ne garder que le plus récent)
+                try:
+                    backup_files = [
+                        os.path.join(normalized_export_dir, f)
+                        for f in os.listdir(normalized_export_dir)
+                        if f.startswith('auto_backup_stocksprices_') and f.endswith('.dump')
+                    ]
+                    # Trier par date de modification croissante
+                    backup_files.sort(key=lambda p: os.path.getmtime(p))
+                    # Supprimer tous les fichiers sauf le dernier (qui est normalement export_file)
+                    for old_path in backup_files[:-1]:
+                        if os.path.abspath(old_path) != os.path.abspath(export_file):
+                            try:
+                                os.remove(old_path)
+                            except Exception:
+                                # Ne pas interrompre l'export en cas d'échec de suppression
+                                pass
+                except Exception:
+                    # Nettoyage best-effort, ignorer les erreurs
+                    pass
+
                 return f"Data successfully exported to {export_file}"
             else:
                 return f"Error during export: {result.stderr}"
