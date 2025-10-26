@@ -58,6 +58,35 @@ def write_tickers_to_file(file_path: str, tickers: List[str]) -> None:
         for t in tickers:
             f.write(f"{t}\n")
 
+def write_removed_tickers_file(original_file: str, removed: List[str]) -> str:
+    """Ecrit la liste des tickers supprimés à côté du CSV d'entrée.
+    Retourne le chemin du fichier écrit.
+    """
+    dir_name = os.path.dirname(original_file)
+    base_name = os.path.splitext(os.path.basename(original_file))[0]
+    dt = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_name = f"{base_name}.removed_{dt}.txt"
+    out_path = os.path.join(dir_name, out_name)
+    os.makedirs(dir_name, exist_ok=True)
+    with open(out_path, 'w') as f:
+        for t in removed:
+            f.write(f"{t}\n")
+    return out_path
+
+def write_stale_tickers_file(dir_from_csv: str, stale: List[str], days: int) -> str:
+    """Ecrit la liste des tickers sans cotations récentes dans le dossier du CSV.
+    Retourne le chemin du fichier écrit.
+    """
+    dir_name = dir_from_csv
+    dt = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_name = f"stale_tickers_{days}d_{dt}.txt"
+    out_path = os.path.join(dir_name, out_name)
+    os.makedirs(dir_name, exist_ok=True)
+    with open(out_path, 'w') as f:
+        for t in stale:
+            f.write(f"{t}\n")
+    return out_path
+
 
 def get_share_row_by_symbol(df_shares: pd.DataFrame, symbol: str):
     df = df_shares[df_shares['symbol'] == symbol]
@@ -171,10 +200,13 @@ def build_updated_ticker_set(shares_mgr: sm.Shares, initial_tickers: List[str]) 
 
     # 1) Retirer ceux sans cotation sur 2 mois
     kept: Set[str] = set()
+    removed_candidates: Set[str] = set()
     for t in initial_in_db:
         row = get_share_row_by_symbol(df, t)
         if has_recent_quotes(shares_mgr, row, days=60):
             kept.add(t)
+        else:
+            removed_candidates.add(t)
 
     # 2) Ajouter EU1 (Euronext large cap)
     eu_df = filter_euronext_large_cap(df)
@@ -201,7 +233,22 @@ def build_updated_ticker_set(shares_mgr: sm.Shares, initial_tickers: List[str]) 
                 kept.add(sym)
 
     # Sort final pour stabilité
-    return sorted(kept)
+    return sorted(kept), sorted(removed_candidates)
+
+def list_stale_tickers(shares_mgr: sm.Shares, days: int = 60) -> List[str]:
+    """Retourne la liste des symboles présents en BDD sans cotations sur 'days' jours."""
+    df = shares_mgr.dfShares
+    stale: List[str] = []
+    for row in df.itertuples(index=False):
+        try:
+            if not has_recent_quotes(shares_mgr, row, days=days):
+                sym = getattr(row, 'symbol', None)
+                if sym:
+                    stale.append(sym)
+        except Exception:
+            # En cas d'erreur ponctuelle, considérer comme non-stale (sécurité)
+            pass
+    return sorted(list(set(stale)))
 
 
 def main():
@@ -211,14 +258,30 @@ def main():
         rel_file = sys.argv[1]
     ticker_file = resolve_file_path(rel_file)
 
-    # Lecture liste actuelle
-    current_list = read_tickers_from_file(ticker_file)
-
     # Chargement des actions en DB
     shares_mgr = sm.Shares(readOnlyThosetoUpdate=True)
 
+    # Mode: lister les tickers sans cotations récentes (base de données complète)
+    if any(arg.startswith('--list-stale') for arg in sys.argv[1:]):
+        # Parse --days=N si fourni
+        days = 60
+        for arg in sys.argv[1:]:
+            if arg.startswith('--days='):
+                try:
+                    days = int(arg.split('=', 1)[1])
+                except Exception:
+                    pass
+        dir_out = os.path.dirname(ticker_file)
+        stale_list = list_stale_tickers(shares_mgr, days=days)
+        out_path = write_stale_tickers_file(dir_out, stale_list, days)
+        print(f"Liste des tickers sans cotations sur {days} jours écrite: {out_path} ({len(stale_list)} tickers)")
+        return
+
+    # Lecture liste actuelle (mode mise à jour du CSV)
+    current_list = read_tickers_from_file(ticker_file)
+
     # Calcul de la nouvelle liste
-    updated_list = build_updated_ticker_set(shares_mgr, current_list)
+    updated_list, removed_list = build_updated_ticker_set(shares_mgr, current_list)
 
     # Backup puis écriture
     backup_path = backup_file(ticker_file)
@@ -226,6 +289,12 @@ def main():
         print(f"Backup du fichier existant: {backup_path}")
     write_tickers_to_file(ticker_file, updated_list)
     print(f"Nouvelle liste écrite: {ticker_file} ({len(updated_list)} tickers)")
+    # Ecriture de la liste des tickers supprimés pour revue manuelle
+    if len(removed_list) > 0:
+        removed_path = write_removed_tickers_file(ticker_file, removed_list)
+        print(f"Tickers supprimés listés dans: {removed_path} ({len(removed_list)} tickers)")
+    else:
+        print("Aucun ticker supprimé.")
 
 
 if __name__ == "__main__":

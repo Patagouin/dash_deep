@@ -866,6 +866,35 @@ class SqlCom:
             print (f"Error while updating model: {modelName} pour {shareObj.symbol}: ", error)
             exit(-1)
 
+    def listModelsForShare(self, shareObj):
+        """Liste les modèles DL pour une action donnée (id, date, scores)."""
+        try:
+            select_query = '''
+                SELECT "id", "date", COALESCE("trainScore", NULL) AS trainScore, COALESCE("testScore", NULL) AS testScore
+                FROM "modelsDeepLearning"
+                WHERE "idShare" = %s
+                ORDER BY "date" DESC
+            '''
+            self.cursor.execute(select_query, (int(shareObj.idShare),))
+            rows = self.cursor.fetchall()
+            return rows
+        except(Exception) as error:
+            print (f"Error while listing models for share {shareObj.symbol}: ", error)
+            return []
+
+    def getModelBinary(self, model_id):
+        """Récupère le binaire d'un modèle par son identifiant (id)."""
+        try:
+            select_query = 'SELECT "model" FROM "modelsDeepLearning" WHERE "id" = %s LIMIT 1'
+            self.cursor.execute(select_query, (str(model_id),))
+            row = self.cursor.fetchone()
+            if row and row[0] is not None:
+                return bytes(row[0])
+            return None
+        except(Exception) as error:
+            print (f"Error while fetching model binary for id {model_id}: ", error)
+            return None
+
     def export_data_to_csv(self, export_path):
         try:
             # Générer dynamiquement le nom du fichier d'exportation avec la date et l'heure actuelles

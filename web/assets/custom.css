@@ -163,3 +163,14 @@ select:focus {
     border: 2px solid #4CAF50 !important;
     background-color: #1E1E1E !important;
 }
+
+/* Réserver de l'espace pour la barre de navigation fixe en bas */
+#page-content {
+    padding-bottom: 80px;
+}
+
+@media (max-width: 600px) {
+    #page-content {
+        padding-bottom: 110px;
+    }
+}

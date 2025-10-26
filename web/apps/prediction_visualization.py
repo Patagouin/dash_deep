@@ -40,7 +40,8 @@ def get_visualization_layout():
                     id='date_picker_range',
                     display_format='DD/MM/YY',
                     start_date=datetime.datetime.now()-datetime.timedelta(days=7),
-                    end_date=datetime.datetime.now()
+                    end_date=datetime.datetime.now(),
+                    persistence=True, persistence_type='session'
                 ),
             ], style={'marginBottom': '20px'}),
             
@@ -55,7 +56,8 @@ def get_visualization_layout():
                     value='all',
                     inline=True,
                     labelStyle={'marginRight': '20px'},
-                    style={'color': '#4CAF50'}
+                    style={'color': '#4CAF50'},
+                    persistence=True, persistence_type='session'
                 ),
                 dcc.Checklist(
                     id='normalize_checkbox',
@@ -73,7 +75,8 @@ def get_visualization_layout():
                         'transition': 'background-color 0.3s',
                         'backgroundColor': 'rgba(76, 175, 80, 0.1)',
                         'border': '1px solid #4CAF50'
-                    }
+                    },
+                    persistence=True, persistence_type='session'
                 )
             ], style={
                 'display': 'grid',

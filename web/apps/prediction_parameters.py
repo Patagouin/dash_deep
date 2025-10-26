@@ -27,7 +27,7 @@ def get_parameters_layout():
                             ],
                             placeholder="Sélectionner un secteur",
                             style={'width': '100%', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         ),
                     ], style={'marginBottom': '20px'}),
 
@@ -47,7 +47,7 @@ def get_parameters_layout():
                             multi=True,
                             placeholder="Choisir une ou plusieurs actions pour l'entraînement",
                             style={'width': '100%', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         ),
                     ]),
                 ], style={
@@ -88,7 +88,7 @@ def get_parameters_layout():
                         },
                         tooltip={"placement": "bottom", "always_visible": True},
                         className='custom-slider',
-                        persistence=True, persistence_type='memory'
+                        persistence=True, persistence_type='session'
                     ),
                     html.Button('+', id='add_training_days', n_clicks=0, style={'marginTop': '6px'}),
                     dcc.Dropdown(
@@ -98,7 +98,7 @@ def get_parameters_layout():
                         multi=True,
                         placeholder='Jours enregistrés',
                         style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                        persistence=True, persistence_type='memory'
+                        persistence=True, persistence_type='session'
                     )
                 ], style={'flex': '0 1 300px', 'minWidth': '260px', 'marginRight': '8px'}),
 
@@ -114,7 +114,7 @@ def get_parameters_layout():
                         marks={i: f'{i}%' for i in range(50, 91, 10)},
                         tooltip={"placement": "bottom", "always_visible": True},
                         className='custom-slider',
-                        persistence=True, persistence_type='memory'
+                        persistence=True, persistence_type='session'
                     ),
                     html.Button('+', id='add_train_ratio', n_clicks=0, style={'marginTop': '6px'}),
                     dcc.Dropdown(
@@ -124,7 +124,7 @@ def get_parameters_layout():
                         multi=True,
                         placeholder='Ratios enregistrés',
                         style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                        persistence=True, persistence_type='memory'
+                        persistence=True, persistence_type='session'
                     )
                 ], style={'flex': '0 1 300px', 'minWidth': '260px'}),
                 ], style={'display': 'grid','gridTemplateColumns': 'repeat(auto-fit, minmax(260px, 1fr))','gap': '8px','marginBottom': '0','backgroundColor': 'transparent','padding': '0','borderRadius': '0','alignItems': 'center'})
@@ -145,7 +145,7 @@ def get_parameters_layout():
                             min=1,
                             step=1,
                             style={'width': '100%', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         ),
                         html.Button('+', id='add_look_back', n_clicks=0, style={'marginLeft': '10px'})
                     ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
@@ -156,7 +156,7 @@ def get_parameters_layout():
                         multi=True,
                         placeholder='Options disponibles (fichier)',
                         style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                        persistence=True, persistence_type='memory'
+                        persistence=True, persistence_type='session'
                     )
                 ], style={'flex': '0 1 200px', 'minWidth': '180px'}),
 
@@ -171,7 +171,7 @@ def get_parameters_layout():
                             min=1,
                             step=1,
                             style={'width': '100%', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         ),
                         html.Button('+', id='add_stride', n_clicks=0, style={'marginLeft': '10px'})
                     ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
@@ -182,7 +182,7 @@ def get_parameters_layout():
                         multi=True,
                         placeholder='Options disponibles (fichier)',
                         style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                        persistence=True, persistence_type='memory'
+                        persistence=True, persistence_type='session'
                     )
                 ], style={'flex': '0 1 200px', 'minWidth': '180px'}),
 
@@ -197,7 +197,7 @@ def get_parameters_layout():
                             min=1,
                             step=1,
                             style={'width': '100%', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         ),
                         html.Button('+', id='add_nb_y', n_clicks=0, style={'marginLeft': '10px'})
                     ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
@@ -208,7 +208,7 @@ def get_parameters_layout():
                         multi=True,
                         placeholder='Options disponibles (fichier)',
                         style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                        persistence=True, persistence_type='memory'
+                        persistence=True, persistence_type='session'
                     )
                 ], style={'flex': '0 1 180px', 'minWidth': '160px'}),
                 # Epochs
@@ -222,7 +222,7 @@ def get_parameters_layout():
                             min=1,
                             step=1,
                             style={'width': '100%', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         ),
                         html.Button('+', id='add_epochs', n_clicks=0, style={'marginLeft': '10px'})
                     ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
@@ -233,7 +233,7 @@ def get_parameters_layout():
                         multi=True,
                         placeholder='Epochs enregistrés',
                         style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                        persistence=True, persistence_type='memory'
+                        persistence=True, persistence_type='session'
                     )
                 ], style={'flex': '0 1 200px', 'minWidth': '180px'}),
 
@@ -247,7 +247,7 @@ def get_parameters_layout():
                             value=64,
                             placeholder="Sélectionner le nombre d'unités",
                             style={'width': '100%', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         ),
                         html.Button('+', id='add_nb_units', n_clicks=0, style={'marginLeft': '10px'})
                     ], style={'display': 'flex', 'alignItems': 'center'}),
@@ -258,7 +258,7 @@ def get_parameters_layout():
                         multi=True,
                         placeholder='Options disponibles (fichier)',
                         style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                        persistence=True, persistence_type='memory'
+                        persistence=True, persistence_type='session'
                     )
                 ], style={'flex': '0 1 220px', 'minWidth': '200px'}),
 
@@ -272,7 +272,7 @@ def get_parameters_layout():
                             value=2,
                             placeholder="Sélectionner le nombre de couches",
                             style={'width': '100%', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         ),
                         html.Button('+', id='add_layers', n_clicks=0, style={'marginLeft': '10px'})
                     ], style={'display': 'flex', 'alignItems': 'center'}),
@@ -283,7 +283,7 @@ def get_parameters_layout():
                         multi=True,
                         placeholder='Options disponibles (fichier)',
                         style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                        persistence=True, persistence_type='memory'
+                        persistence=True, persistence_type='session'
                     )
                 ], style={'flex': '0 1 200px', 'minWidth': '180px'}),
 
@@ -299,7 +299,7 @@ def get_parameters_layout():
                             value=0.001,
                             placeholder="Sélectionner le taux d'apprentissage",
                             style={'width': '100%', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         ),
                         html.Button('+', id='add_learning_rate', n_clicks=0, style={'marginLeft': '10px'})
                     ], style={'display': 'flex', 'alignItems': 'center'}),
@@ -310,7 +310,7 @@ def get_parameters_layout():
                         multi=True,
                         placeholder='Options disponibles (fichier)',
                         style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                        persistence=True, persistence_type='memory'
+                        persistence=True, persistence_type='session'
                     )
                 ], style={'flex': '0 1 220px', 'minWidth': '200px'}),
 
@@ -324,7 +324,7 @@ def get_parameters_layout():
                             value=0.1,
                             placeholder='Taux de dropout',
                             style={'width': '100%', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         ),
                         html.Button('+', id='add_transformer_dropout', n_clicks=0, style={'marginLeft': '10px'})
                     ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
@@ -335,7 +335,7 @@ def get_parameters_layout():
                         multi=True,
                         placeholder='Options disponibles (fichier)',
                         style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                        persistence=True, persistence_type='memory'
+                        persistence=True, persistence_type='session'
                     )
                 ], style={'flex': '0 1 220px', 'minWidth': '200px'}),
 
@@ -353,7 +353,7 @@ def get_parameters_layout():
                         value='random',
                         placeholder='Choisir la méthode de tuning',
                         style={'width': '100%', 'color': '#FF8C00'},
-                        persistence=True, persistence_type='memory'
+                        persistence=True, persistence_type='session'
                     )
                 ], style={'flex': '0 1 220px', 'minWidth': '200px'}),
                 ], style={'display': 'grid','gridTemplateColumns': 'repeat(auto-fit, minmax(180px, 1fr))','gap': '8px','marginBottom': '0','backgroundColor': 'transparent','padding': '0','borderRadius': '0','alignItems': 'center'})
@@ -373,7 +373,7 @@ def get_parameters_layout():
                                 value=4,
                                 placeholder='Nombre de têtes',
                                 style={'width': '100%', 'color': '#FF8C00'},
-                                persistence=True, persistence_type='memory'
+                                persistence=True, persistence_type='session'
                             ),
                             html.Button('+', id='add_transformer_num_heads', n_clicks=0, style={'marginLeft': '10px'})
                         ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
@@ -384,7 +384,7 @@ def get_parameters_layout():
                             multi=True,
                             placeholder='Options disponibles (fichier)',
                             style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         )
                     ], style={'flex': '0 1 220px', 'minWidth': '200px'}),
 
@@ -398,7 +398,7 @@ def get_parameters_layout():
                                 value=4,
                                 placeholder='Facteur de largeur FFN',
                                 style={'width': '100%', 'color': '#FF8C00'},
-                                persistence=True, persistence_type='memory'
+                                persistence=True, persistence_type='session'
                             ),
                             html.Button('+', id='add_transformer_ff_multiplier', n_clicks=0, style={'marginLeft': '10px'})
                         ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
@@ -409,7 +409,7 @@ def get_parameters_layout():
                             multi=True,
                             placeholder='Options disponibles (fichier)',
                             style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         )
                     ], style={'flex': '0 1 220px', 'minWidth': '200px'}),
                 ], style={'display': 'grid','gridTemplateColumns': 'repeat(auto-fit, minmax(200px, 1fr))','gap': '8px'})
@@ -430,7 +430,7 @@ def get_parameters_layout():
                                 min=1,
                                 step=1,
                                 style={'width': '100%', 'color': '#FF8C00'},
-                                persistence=True, persistence_type='memory'
+                                persistence=True, persistence_type='session'
                             ),
                             html.Button('+', id='add_trade_volume', n_clicks=0, style={'marginLeft': '10px'})
                         ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
@@ -441,7 +441,7 @@ def get_parameters_layout():
                             multi=True,
                             placeholder='Volumes enregistrés',
                             style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         )
                     ], style={'flex': '0 1 220px', 'minWidth': '200px'}),
 
@@ -456,7 +456,7 @@ def get_parameters_layout():
                                 min=1,
                                 step=1,
                                 style={'width': '100%', 'color': '#FF8C00'},
-                                persistence=True, persistence_type='memory'
+                                persistence=True, persistence_type='session'
                             ),
                             html.Button('+', id='add_k_trades', n_clicks=0, style={'marginLeft': '10px'})
                         ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
@@ -467,7 +467,7 @@ def get_parameters_layout():
                             multi=True,
                             placeholder='Valeurs K enregistrées',
                             style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         )
                     ], style={'flex': '0 1 220px', 'minWidth': '200px'}),
                 ], style={'display': 'grid','gridTemplateColumns': 'repeat(auto-fit, minmax(200px, 1fr))','gap': '8px'})
@@ -487,7 +487,7 @@ def get_parameters_layout():
                         value='lstm',
                         placeholder="Sélectionner l'architecture",
                         style={'width': '100%', 'color': '#FF8C00'},
-                        persistence=True, persistence_type='memory'
+                        persistence=True, persistence_type='session'
                     ),
                     html.Button('+', id='add_model_type', n_clicks=0, style={'marginLeft': '10px'})
                 ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
@@ -498,7 +498,7 @@ def get_parameters_layout():
                     multi=True,
                     placeholder='Options disponibles (fichier)',
                     style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                    persistence=True, persistence_type='memory'
+                    persistence=True, persistence_type='session'
                 )
             ], style={'marginBottom': '0','backgroundColor': 'transparent','padding': '0','borderRadius': '0'}),
 
@@ -516,7 +516,7 @@ def get_parameters_layout():
                             value='regression',
                             placeholder='Choisir une catégorie',
                             style={'width': '100%', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         )
                     ], style={'flex': '0 1 220px', 'minWidth': '200px'}),
                     html.Div([
@@ -532,7 +532,7 @@ def get_parameters_layout():
                                 value='mse',
                                 placeholder="Sélectionner la fonction de perte",
                                 style={'width': '100%', 'color': '#FF8C00'},
-                                persistence=True, persistence_type='memory'
+                                persistence=True, persistence_type='session'
                             ),
                             html.Button('+', id='add_loss', n_clicks=0, style={'marginLeft': '10px'})
                         ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
@@ -543,7 +543,7 @@ def get_parameters_layout():
                             multi=True,
                             placeholder='Options disponibles (fichier)',
                             style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
-                            persistence=True, persistence_type='memory'
+                            persistence=True, persistence_type='session'
                         )
                     ], style={'flex': '0 1 220px', 'minWidth': '200px'}),
                 ], style={'display': 'grid','gridTemplateColumns': 'repeat(auto-fit, minmax(200px, 1fr))','gap': '8px'})
@@ -556,7 +556,7 @@ def get_parameters_layout():
                     type='text',
                     placeholder='Nom du preset',
                     style={'marginRight': '10px', 'width': '220px'},
-                    persistence=True, persistence_type='memory'
+                    persistence=True, persistence_type='session'
                 ),
                 html.Button('Sauvegarder le preset', id='save_training_preset', n_clicks=0, className='update-button', style={'marginRight': '10px'}),
                 html.Button('Modifier le preset', id='edit_training_preset', n_clicks=0, className='update-button', style={'marginRight': '10px'}),
@@ -565,7 +565,7 @@ def get_parameters_layout():
                     options=[],
                     placeholder='Choisir un preset',
                     style={'width': '220px', 'marginRight': '10px', 'color': '#FF8C00'},
-                    persistence=True, persistence_type='memory'
+                    persistence=True, persistence_type='session'
                 ),
                 html.Button('Supprimer le preset', id='delete_training_preset', n_clicks=0, className='update-button', style={'marginRight': '10px', 'backgroundColor': '#b00020'}),
                 html.Button('Charger le preset', id='load_training_preset', n_clicks=0, className='update-button'),

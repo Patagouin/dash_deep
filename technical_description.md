@@ -152,3 +152,65 @@
     *   Data, model performance, and "potential" metrics are visualized using `matplotlib` and `plotly`.
 
 The project is structured to separate concerns: data persistence (`SqlCom`), stock data management (`Shares`), general utilities (`utils`), model-specific logic (`prediction_utils`, `lstm`), broker interaction (`Broker`, `trading212`), and high-level scripting/experimentation (`test_models.py`).
+
+
+## Web App — Analyse & Simulation (Mises à jour)
+
+### Corrélation (`web/services/correlation.py`, `web/apps/analyse.py`)
+- Alignement intraday par symbole sur heures principales (main hours) via `openMarketTime`/`closeMarketTime` si disponibles (défaut 09:30–16:00).
+- Fonctions:
+  - `get_minute_returns`, `get_returns_with_daily_fallback` (minute puis fallback jour).
+  - `corr_matrix_with_lag`, `corr_matrix_max_0_30` avec `positive_mode='both_positive'` pour co-augmentations.
+  - Winsorisation 1%, min 60 points (≥10% des points communs), Spearman.
+- Heatmap (balayage 0–30 min) + Top 10 (lag optimal par paire) calculés sur “hausses uniquement”.
+
+### Simulation (`web/apps/simulation.py`)
+- Deux modes via `dcc.Tabs`:
+  - Lead-lag (2 actions): entrée sur signal de A (fenêtre 30 min), tenue sur `lag_minutes`, sorties à fin de lag/fin de séance.
+  - Fenêtre horaire (1 action): achat/vente quotidiens à heures définies.
+- UI: masquage des champs non pertinents en fonction de l’onglet (B, seuil, décalage masqués en mode fenêtre).
+- Perfs instrumentées: temps Fetch, Align, Backtest, et détails backtest (prep/loop).
+- Résumé: Win rate, Win rate (non‑zéro), PnL, valeur finale (%), gain moyen/jour (moyenne des variations d’equity quotidiennes), stats journées/minutes.
+
+### Backtests (`web/services/backtest.py`)
+- `backtest_lag_correlation(...)`: support de `signal_window_minutes`, `buy_start_time`, `sell_end_time`, perfs `{'prep_s','loop_s'}`.
+- `backtest_time_window(...)`: stratégie d’achat/vente quotidienne.
+
+### Builders UI (`web/services/sim_builders.py`)
+- `build_equity_figure(...)`, `build_daily_outputs(...)`, `build_trades_table(...)`, `build_summary(...)` pour factoriser le rendu et l’agrégation.
+
+### Timeseries (`web/services/timeseries.py`)
+- Ajout des versions instrumentées: `fetch_intraday_series_with_perf(...)`, `align_minute_with_perf(...)` (renvoient un dict `perf` détaillé: DB, update cotations, concat/dedup, resample, fenêtre, etc.).
+
+### Limitations connues
+- Les paires US/EU ont peu de recouvrement en minutes ⇒ corrélations instables; préférer paires intra‑marché.
+- Un lag élevé avec peu de points peut biaiser les tops; surveiller le min de points/ratio.
+
+## Script de rafraîchissement des tickers
+
+Fichier: `scripts/refresh_ticker_list.py`
+
+But:
+- Nettoyer et enrichir la liste des tickers utilisée pour l’ingestion/analyse, en croisant les informations déjà en base.
+
+Fonctionnement technique:
+- Charge `Models.Shares` (connexion DB via `Models.SqlCom` et `.env`).
+- Lit la liste existante depuis le CSV cible.
+- Vérifie l’existence de cotations récentes par ticker via `Shares.getDfDataRangeFromShare(share, date_begin, date_end)` sur une fenêtre de 60 jours.
+- Construit un ensemble final en:
+  1. Conservant les tickers initiaux ayant des cotations récentes.
+  2. Ajoutant les tickers correspondant aux catégories suivantes, s’ils ont des cotations récentes:
+     - EU1: Euronext large cap (détection via `fullExchangeName`/`exchange`/`market` contenant "Euronext"/"Paris"/"Amsterdam"/"Brussels"/"Lisbon" et `marketCap` ≥ 10e9).
+     - US1: Mega cap secteur Technology (`sector` ~ "Technology", `country` == "United States" ou exchange NASDAQ/NYSE, `marketCap` ≥ 200e9).
+     - US2: Large cap secteur Technology (mêmes critères sector/US, 10e9 ≤ `marketCap` < 200e9).
+
+Colonnes utilisées (si présentes dans `sharesInfos`): `symbol`, `marketCap`, `sector`, `country`, `fullExchangeName`/`exchange`/`market`.
+
+Sortie:
+- Sauvegarde de l’original: `<fichier>.bak_YYYYMMDD_HHMMSS`.
+- Réécriture du CSV cible trié alphabétiquement, une ligne par ticker.
+
+Exécution:
+```
+/projets/dash_deep/venv/bin/python /projets/dash_deep/scripts/refresh_ticker_list.py /projets/dash_deep/data/1er_filtrage_yahoo_info_dispo.csv
+```

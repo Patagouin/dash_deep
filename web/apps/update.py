@@ -82,13 +82,15 @@ layout = html.Div([
             id='check_duplicate',
             options=[{'label': 'Check duplicate', 'value': 'check_duplicate'}],
             value=[],
-            style={'marginTop': '10px'}
+            style={'marginTop': '10px'},
+            persistence=True, persistence_type='session'
         ),
         dcc.Checklist(
             id='export_data',
             options=[{'label': 'Export data after update', 'value': 'export_data'}],
             value=[],
-            style={'marginTop': '10px'}
+            style={'marginTop': '10px'},
+            persistence=True, persistence_type='session'
         ),
     ], style={'width': '50%', 'margin': 'auto', 'textAlign': 'center'}),
     
@@ -133,7 +135,8 @@ layout = html.Div([
             'fontFamily': 'monospace',
             'padding': '10px',
             'overflowY': 'scroll'
-        }
+        },
+        persistence=True, persistence_type='session'
     ),
 
     # Statut d'export à la demande

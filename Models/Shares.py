@@ -163,6 +163,26 @@ class Shares:
             logging.exception("[TRAIN|Shares] Failed to save model")
             raise
 
+    def list_models_for_symbol(self, symbol: str):
+        df = self.getRowsDfByKeysValues('symbol', symbol)
+        if df.empty:
+            return []
+        share = df.iloc[0]
+        return self.__sqlObj.listModelsForShare(share)
+
+    def load_model_from_db(self, model_id):
+        """Charge un modèle Keras depuis la BDD (par id) et retourne l'objet modèle Keras."""
+        import tempfile
+        import tensorflow as tf
+        model_bin = self.__sqlObj.getModelBinary(model_id)
+        if not model_bin:
+            raise ValueError(f"Modèle introuvable en BDD pour id={model_id}")
+        with tempfile.NamedTemporaryFile(suffix='.keras', delete=True) as tmp:
+            tmp.write(model_bin)
+            tmp.flush()
+            model = tf.keras.models.load_model(tmp.name, compile=False)
+        return model
+
     def updateAllSharesModels(self, df=None):
         if df is None:
             workingDf = self.dfShares

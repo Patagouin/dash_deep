@@ -1,0 +1,10 @@
+# Ignore virtual environment directories
+/venv/
+/env/
+
+# Ignore large files to speed up indexing
+/web/assets/stylesheet.css
+/test_models/
+
+# Ignore file causing indexing to time out
+/Models/prediction_utils.py

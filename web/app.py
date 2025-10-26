@@ -1,5 +1,10 @@
 # app.py
 import os
+# Charger la config TensorFlow (GPU, memory growth) le plus tôt possible
+try:
+    import web.tf_setup  # noqa: F401
+except Exception:
+    pass
 import diskcache
 from flask_socketio import SocketIO
 import logging

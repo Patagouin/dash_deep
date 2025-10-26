@@ -17,7 +17,8 @@ layout = html.Div([
             for stock in sorted(shM.dfShares.itertuples(), key=lambda stock: stock.symbol)
         ],
         multi=False,
-        style={'width': '50%', 'margin': '10px auto'}
+        style={'width': '50%', 'margin': '10px auto'},
+        persistence=True, persistence_type='session'
     ),
 
     # Boutons pour acheter et vendre des actions

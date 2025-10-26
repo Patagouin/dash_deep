@@ -6,6 +6,7 @@ from dash import html
 import time
 import logging
 import numpy as np
+import dash
 
 
 @app.callback(
@@ -104,7 +105,15 @@ def display_stock_graph(values, start_date, end_date, data_type, normalize_value
         fig.layout.template = 'plotly_dark'
         return fig
 
-    if relayoutData and ('xaxis.range' in relayoutData or ('xaxis.range[0]' in relayoutData and 'xaxis.range[1]' in relayoutData)):
+    # Déterminer le déclencheur pour éviter que relayoutData n'écrase les dates choisies
+    ctx = dash.callback_context
+    trigger_id = ctx.triggered[0]['prop_id'] if ctx and ctx.triggered else None
+    use_relayout = False
+    if trigger_id and trigger_id.startswith('stock_graph.relayoutData') and relayoutData:
+        if 'xaxis.range' in relayoutData or ('xaxis.range[0]' in relayoutData and 'xaxis.range[1]' in relayoutData):
+            use_relayout = True
+
+    if use_relayout:
         try:
             zoom_start_time = time.time()
             if 'xaxis.range' in relayoutData:
