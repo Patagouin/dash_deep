@@ -1,6 +1,6 @@
 use axum::extract::ws::{WebSocketUpgrade, Message};
 use axum::{response::IntoResponse, extract::State};
-use futures::StreamExt;
+use futures_util::StreamExt;
 use crate::AppState;
 
 pub async fn ws_handler(State(_state): State<std::sync::Arc<AppState>>, ws: WebSocketUpgrade) -> impl IntoResponse {
