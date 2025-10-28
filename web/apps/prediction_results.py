@@ -8,6 +8,23 @@ def get_results_layout():
             'color': '#FF8C00'
         }),
 
+        # Sélection de modèles sauvegardés
+        html.Div([
+            html.Div([
+                html.Label('Modèle sauvegardé'),
+                dcc.Dropdown(
+                    id='saved_model_dropdown',
+                    options=[],
+                    placeholder='Choisir un modèle entraîné pour l\'action sélectionnée',
+                    style={'width': '100%', 'color': '#FF8C00'},
+                    persistence=True, persistence_type='session'
+                ),
+            ], style={'flex': '3', 'minWidth': '260px'}),
+            html.Div([
+                html.Button('Charger le modèle', id='load_saved_model', n_clicks=0, className='update-button', style={'width': '100%'}),
+            ], style={'flex': '1', 'minWidth': '160px', 'alignSelf': 'end'})
+        ], style={'display': 'grid', 'gridTemplateColumns': '1fr 200px', 'gap': '10px', 'padding': '0 20px 10px 20px', 'backgroundColor': '#1E1E1E', 'borderRadius': '8px'}),
+
         # Container for displaying metrics and graph side by side
         html.Div([
             # Container for metrics (2/3 of the width)

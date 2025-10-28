@@ -10,6 +10,7 @@ import pytz
 import re
 from pandas.tseries.offsets import BDay
 import subprocess  # Importer subprocess pour exécuter des commandes système
+import json
 
 #chatGPT
 #from sqlalchemy import create_engine
@@ -848,22 +849,62 @@ class SqlCom:
         except Exception as e:
             print(f"Erreur lors de l'extraction des données: {e}")
 
-    def saveModel(self, shareObj, modelName, modelBin, trainScore, testScore):
+    def saveModel(self, shareObj, modelName, modelBin, trainScore, testScore, history=None, hps=None, data_info=None):
+        """Sauvegarde un modèle et ses métadonnées.
+
+        Essaie d'insérer dans les colonnes JSONB (history, hps, data_info) si elles existent.
+        En cas d'échec (colonnes manquantes), retombe sur l'insertion minimale.
+        """
         try:
             current_date = datetime.datetime.now()
-            # Utiliser des paramètres pour éviter les problèmes d'échappement et les injections
-            insert_query = '''
+            id_share_int = int(shareObj.idShare) if not isinstance(shareObj.idShare, int) else shareObj.idShare
+            train_score_f = float(trainScore) if trainScore is not None else None
+            test_score_f = float(testScore) if testScore is not None else None
+
+            # Première tentative: avec colonnes JSONB
+            insert_query_json = '''
+                INSERT INTO "modelsDeepLearning" ("id", "idShare", "model", "trainScore", "testScore", "date", "history", "hps", "data_info")
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT DO NOTHING
+            '''
+            history_json = json.dumps(history) if history is not None else None
+            hps_json = json.dumps(hps) if hps is not None else None
+            data_info_json = json.dumps(data_info) if data_info is not None else None
+            try:
+                self.cursor.execute(
+                    insert_query_json,
+                    (
+                        modelName,
+                        id_share_int,
+                        psycopg2.Binary(modelBin),
+                        train_score_f,
+                        test_score_f,
+                        current_date,
+                        history_json,
+                        hps_json,
+                        data_info_json,
+                    ),
+                )
+                self.connection.commit()
+                return
+            except Exception as e_json:
+                # Si l'erreur est due à des colonnes manquantes, on retombe sur l'insert minimal
+                # (UndefinedColumn ou colonne JSONB absente)
+                self.connection.rollback()
+
+            # Fallback: insertion minimale (schéma ancien)
+            insert_query_min = '''
                 INSERT INTO "modelsDeepLearning" ("id", "idShare", "model", "trainScore", "testScore", "date")
                 VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT DO NOTHING
             '''
-            id_share_int = int(shareObj.idShare) if not isinstance(shareObj.idShare, int) else shareObj.idShare
-            train_score_f = float(trainScore) if trainScore is not None else None
-            test_score_f = float(testScore) if testScore is not None else None
-            self.cursor.execute(insert_query, (modelName, id_share_int, psycopg2.Binary(modelBin), train_score_f, test_score_f, current_date))
+            self.cursor.execute(
+                insert_query_min,
+                (modelName, id_share_int, psycopg2.Binary(modelBin), train_score_f, test_score_f, current_date),
+            )
             self.connection.commit()
-        except(Exception) as error:
-            print (f"Error while updating model: {modelName} pour {shareObj.symbol}: ", error)
+        except (Exception) as error:
+            print(f"Error while updating model: {modelName} pour {shareObj.symbol}: ", error)
             exit(-1)
 
     def listModelsForShare(self, shareObj):
@@ -894,6 +935,76 @@ class SqlCom:
         except(Exception) as error:
             print (f"Error while fetching model binary for id {model_id}: ", error)
             return None
+
+    def getModelMetadata(self, model_id):
+        """Retourne les métadonnées d'un modèle (scores, date, history, hps, data_info, idShare).
+
+        Garde-­fou: si les colonnes JSON n'existent pas encore, retourne des champs None.
+        """
+        try:
+            # Tenter de lire toutes les colonnes (y compris JSONB)
+            select_query = '''
+                SELECT "idShare", "trainScore", "testScore", "date",
+                       COALESCE("history", NULL) AS history,
+                       COALESCE("hps", NULL) AS hps,
+                       COALESCE("data_info", NULL) AS data_info
+                FROM "modelsDeepLearning"
+                WHERE "id" = %s
+                LIMIT 1
+            '''
+            self.cursor.execute(select_query, (str(model_id),))
+            row = self.cursor.fetchone()
+            if not row:
+                return {}
+            id_share, train_score, test_score, date_val, history_val, hps_val, data_info_val = row
+            # Convertir JSONB -> dict si nécessaire (psycopg2 peut renvoyer déjà dict selon config)
+            def _json_load(v):
+                if v is None:
+                    return None
+                if isinstance(v, (dict, list)):
+                    return v
+                try:
+                    return json.loads(v)
+                except Exception:
+                    return None
+            return {
+                'idShare': int(id_share) if id_share is not None else None,
+                'trainScore': float(train_score) if train_score is not None else None,
+                'testScore': float(test_score) if test_score is not None else None,
+                'date': date_val,
+                'history': _json_load(history_val),
+                'hps': _json_load(hps_val),
+                'data_info': _json_load(data_info_val),
+            }
+        except Exception as e:
+            # Fallback si colonnes JSON absentes
+            try:
+                self.connection.rollback()
+            except Exception:
+                pass
+            try:
+                select_query_min = '''
+                    SELECT "idShare", "trainScore", "testScore", "date"
+                    FROM "modelsDeepLearning"
+                    WHERE "id" = %s
+                    LIMIT 1
+                '''
+                self.cursor.execute(select_query_min, (str(model_id),))
+                row = self.cursor.fetchone()
+                if not row:
+                    return {}
+                id_share, train_score, test_score, date_val = row
+                return {
+                    'idShare': int(id_share) if id_share is not None else None,
+                    'trainScore': float(train_score) if train_score is not None else None,
+                    'testScore': float(test_score) if test_score is not None else None,
+                    'date': date_val,
+                    'history': None,
+                    'hps': None,
+                    'data_info': None,
+                }
+            except Exception:
+                return {}
 
     def export_data_to_csv(self, export_path):
         try:

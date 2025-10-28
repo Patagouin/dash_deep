@@ -150,14 +150,14 @@ class Shares:
         # 4. Sauvegarde déléguée à l'appelant (après l'entraînement final)
         return best_model, best_hps, tuner
 
-    def save_model(self, shareObj, model, model_name, trainScore=None, testScore=None):
+    def save_model(self, shareObj, model, model_name, trainScore=None, testScore=None, history=None, hps=None, data_info=None):
         try:
             logging.info("[TRAIN|Shares] save model: start")
             model.save("model.keras")
             with open("model.keras", "rb") as file:
                 model_binary = file.read()
             logging.info(f"[TRAIN|Shares] saveModel to DB: name={model_name} train={trainScore} test={testScore}")
-            self.__sqlObj.saveModel(shareObj, model_name, model_binary, trainScore, testScore)
+            self.__sqlObj.saveModel(shareObj, model_name, model_binary, trainScore, testScore, history=history, hps=hps, data_info=data_info)
             logging.info("[TRAIN|Shares] save model: done")
         except Exception as e:
             logging.exception("[TRAIN|Shares] Failed to save model")
@@ -182,6 +182,10 @@ class Shares:
             tmp.flush()
             model = tf.keras.models.load_model(tmp.name, compile=False)
         return model
+
+    def get_model_metadata(self, model_id):
+        """Retourne un dict avec scores/date/history/hps/data_info pour un modèle donné."""
+        return self.__sqlObj.getModelMetadata(model_id)
 
     def updateAllSharesModels(self, df=None):
         if df is None:

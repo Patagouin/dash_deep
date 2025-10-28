@@ -839,7 +839,48 @@ def train_and_display_progress(set_progress, n_clicks, selected_symbols, trainin
                 trainScore = None
                 testScore = None
             model_name = hps.get('project_name', f'pred_{symbol}_ui')
-            shM.save_model(shareObj, best_model, model_name, trainScore, testScore)
+            # Préparer métadonnées (JSON sérialisables)
+            try:
+                hps_to_save = {
+                    'architecture': hps.get('architecture'),
+                    'layers': hps.get('layers'),
+                    'nb_units': hps.get('nb_units'),
+                    'learning_rate': hps.get('learning_rate'),
+                    'loss': hps.get('loss'),
+                    'transformer_num_heads': hps.get('transformer_num_heads'),
+                    'transformer_dropout': hps.get('transformer_dropout'),
+                    'transformer_ff_multiplier': hps.get('transformer_ff_multiplier'),
+                    'epochs': hps.get('epochs'),
+                    'tuning_method': hps.get('tuning_method'),
+                    'max_trials': hps.get('max_trials'),
+                    'executions_per_trial': hps.get('executions_per_trial'),
+                }
+            except Exception:
+                hps_to_save = None
+            try:
+                data_info_to_save = {
+                    'look_back_x': data_info.get('look_back_x'),
+                    'stride_x': data_info.get('stride_x'),
+                    'nb_y': data_info.get('nb_y'),
+                    'features': data_info.get('features'),
+                    'return_type': data_info.get('return_type'),
+                    'nb_days_to_take_dataset': data_info.get('nb_days_to_take_dataset'),
+                    'percent_train_test': data_info.get('percent_train_test'),
+                    'trade_volume': data_info.get('trade_volume'),
+                    'k_trades': data_info.get('k_trades'),
+                }
+            except Exception:
+                data_info_to_save = None
+            shM.save_model(
+                shareObj,
+                best_model,
+                model_name,
+                trainScore,
+                testScore,
+                history=history.history if hasattr(history, 'history') else None,
+                hps=hps_to_save,
+                data_info=data_info_to_save,
+            )
         except Exception as e:
             logging.exception("[TRAIN] Save after final fit failed")
             status_message = f"Entraînement terminé. (Erreur sauvegarde: {e})"
@@ -870,4 +911,120 @@ Note: les métriques de performance du graphique sont mises à jour dans
 `prediction_callbacks.graph.update_performance_metrics`.
 """
 
+
+
+# === Gestion des modèles sauvegardés (UI prédiction) ===
+@app.callback(
+    [
+        Output('saved_model_dropdown', 'options'),
+        Output('saved_model_dropdown', 'value')
+    ],
+    [
+        Input('train_share_list', 'value'),
+        Input('config_bootstrap', 'n_intervals')
+    ],
+)
+def populate_saved_models_dropdown(selected_symbols, _):
+    try:
+        if not selected_symbols:
+            return [], None
+        # On prend la première action réelle sélectionnée
+        symbols = [s for s in (selected_symbols or []) if s != 'All']
+        if not symbols:
+            return [], None
+        symbol = symbols[0]
+        rows = shM.list_models_for_symbol(symbol)
+        options = []
+        for r in rows or []:
+            # r: (id, date, trainScore, testScore)
+            model_id = r[0]
+            date_val = r[1]
+            train_s = r[2]
+            test_s = r[3]
+            label = f"{model_id} — {str(date_val) if date_val else ''} — train={train_s if train_s is not None else '-'} val={test_s if test_s is not None else '-'}"
+            options.append({'label': label, 'value': model_id})
+        return options, (options[0]['value'] if options else None)
+    except Exception:
+        return [], None
+
+
+@app.callback(
+    [
+        Output('model_metrics', 'children'),
+        Output('accuracy_graph', 'figure'),
+    ],
+    Input('load_saved_model', 'n_clicks'),
+    State('saved_model_dropdown', 'value'),
+    prevent_initial_call=True,
+)
+def load_saved_model_and_display(n_clicks, selected_model_id):
+    import plotly.graph_objs as go
+    if not n_clicks or not selected_model_id:
+        return dash.no_update, dash.no_update
+    try:
+        # Métadonnées
+        meta = shM.get_model_metadata(selected_model_id) or {}
+        train_s = meta.get('trainScore')
+        test_s = meta.get('testScore')
+        date_val = meta.get('date')
+        hps = meta.get('hps') or {}
+        data_info = meta.get('data_info') or {}
+
+        # Graphique depuis l'historique si dispo
+        history = meta.get('history') or {}
+        fig = go.Figure()
+        # Essayer DA, sinon Loss
+        da = history.get('directional_accuracy') or history.get('main_output_directional_accuracy')
+        val_da = history.get('val_directional_accuracy') or history.get('val_main_output_directional_accuracy')
+        if da or val_da:
+            if da:
+                fig.add_trace(go.Scatter(x=list(range(1, len(da)+1)), y=da, name='Training Accuracy'))
+            if val_da:
+                fig.add_trace(go.Scatter(x=list(range(1, len(val_da)+1)), y=val_da, name='Validation Accuracy'))
+            fig.update_layout(title=f'Historique entraînement — {selected_model_id}', template='plotly_dark')
+        else:
+            tr_loss = history.get('loss')
+            val_loss = history.get('val_loss')
+            if tr_loss:
+                fig.add_trace(go.Scatter(x=list(range(1, len(tr_loss)+1)), y=tr_loss, name='Training Loss'))
+            if val_loss:
+                fig.add_trace(go.Scatter(x=list(range(1, len(val_loss)+1)), y=val_loss, name='Validation Loss'))
+            fig.update_layout(title=f'Historique pertes — {selected_model_id}', template='plotly_dark')
+
+        # Bloc métriques
+        metrics_lines = [
+            f"Modèle: {selected_model_id}",
+            f"Date: {str(date_val) if date_val else '-'}",
+            f"Score train (moy): {train_s if train_s is not None else '-'}",
+            f"Score val (moy): {test_s if test_s is not None else '-'}",
+        ]
+        # Ajouter résumé HPS
+        try:
+            if hps:
+                arch = hps.get('architecture')
+                layers = hps.get('layers')
+                nb_units = hps.get('nb_units')
+                lr = hps.get('learning_rate')
+                loss = hps.get('loss')
+                metrics_lines.append(f"Arch: {arch} | layers={layers} | units={nb_units} | lr={lr} | loss={loss}")
+        except Exception:
+            pass
+        # Ajouter résumé data_info
+        try:
+            if data_info:
+                metrics_lines.append(
+                    f"Data: look_back={data_info.get('look_back_x')} stride={data_info.get('stride_x')} nb_y={data_info.get('nb_y')} split={data_info.get('percent_train_test')}%"
+                )
+        except Exception:
+            pass
+        metrics_text = html.Pre("\n".join(str(x) for x in metrics_lines))
+        return metrics_text, fig
+    except Exception as e:
+        err = html.Div([
+            html.H5("Erreur chargement modèle"),
+            html.Pre(str(e)),
+        ])
+        # Retourner un graphique vide themed
+        empty_fig = go.Figure(); empty_fig.update_layout(template='plotly_dark')
+        return err, empty_fig
 

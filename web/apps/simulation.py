@@ -1,8 +1,9 @@
 from dash import dcc, html, dash_table
 from dash.dependencies import Input, Output, State
 from app import app, shM
-from web.services.timeseries import fetch_intraday_series, align_minute, fetch_intraday_series_with_perf, align_minute_with_perf
+from web.services.timeseries import fetch_intraday_series, align_minute, fetch_intraday_series_with_perf, align_minute_with_perf, fetch_intraday_dataframe
 from web.services.backtest import backtest_lag_correlation, backtest_time_window
+from web.services.model_strategy import backtest_model_intraday
 from web.components.navigation import create_navigation
 from web.services.sim_builders import build_equity_figure, build_daily_outputs, build_trades_table, build_summary
 import pandas as pd
@@ -47,7 +48,8 @@ def layout_content():
         html.Div([
             dcc.Tabs(id='sim_tabs', value='leadlag', children=[
                 dcc.Tab(label='Lead-lag (2 actions)', value='leadlag'),
-                dcc.Tab(label='Fenêtre horaire (1 action)', value='timewindow')
+                dcc.Tab(label='Fenêtre horaire (1 action)', value='timewindow'),
+                dcc.Tab(label='Modèle (1 action)', value='model')
             ])
         ]),
         html.Div([
@@ -79,6 +81,16 @@ def layout_content():
                     persistence=True, persistence_type='session'
                 )
             ], id='panel_trade_symbol'),
+            html.Div([
+                html.Label('Modèle sauvegardé'),
+                dcc.Dropdown(
+                    id='sim_saved_model',
+                    options=[],
+                    placeholder="Choisir un modèle pour l'action référence",
+                    style={'width': '100%', 'color': '#FF8C00'},
+                    persistence=True, persistence_type='session'
+                )
+            ], id='panel_model', style={'display': 'none'}),
             html.Div([
                 html.Label('Période'),
                 dcc.DatePickerRange(
@@ -324,7 +336,8 @@ layout = layout_content()
     [
         Output('panel_trade_symbol', 'style'),
         Output('panel_threshold', 'style'),
-        Output('panel_lag', 'style')
+        Output('panel_lag', 'style'),
+        Output('panel_model', 'style')
     ],
     [
         Input('sim_tabs', 'value')
@@ -334,8 +347,33 @@ def toggle_panels(sim_mode):
     show_style = { 'display': 'block' }
     hide_style = { 'display': 'none' }
     if sim_mode == 'timewindow':
-        return hide_style, hide_style, hide_style
-    return show_style, show_style, show_style
+        return hide_style, hide_style, hide_style, hide_style
+    if sim_mode == 'model':
+        # Modèle: une seule action + modèle, pas de seuil/lag
+        return hide_style, hide_style, hide_style, show_style
+    return show_style, show_style, show_style, hide_style
+
+
+@app.callback(
+    Output('sim_saved_model', 'options'),
+    [Input('sim_reference_symbol', 'value')]
+)
+def populate_sim_models(symbol):
+    try:
+        if not symbol:
+            return []
+        rows = shM.list_models_for_symbol(symbol)
+        options = []
+        for r in rows or []:
+            model_id = r[0]
+            date_val = r[1]
+            train_s = r[2]
+            test_s = r[3]
+            label = f"{model_id} — {str(date_val) if date_val else ''} — train={train_s if train_s is not None else '-'} val={test_s if test_s is not None else '-'}"
+            options.append({'label': label, 'value': model_id})
+        return options
+    except Exception:
+        return []
 
 
 @app.callback(
@@ -363,10 +401,11 @@ def toggle_panels(sim_mode):
         State('sim_initial_cash', 'value'),
         State('sim_trade_amount', 'value'),
         State('sim_buy_start_time', 'value'),
-        State('sim_sell_end_time', 'value')
+        State('sim_sell_end_time', 'value'),
+        State('sim_saved_model', 'value')
     ]
 )
-def run_simulation(n_clicks, stored_data, sim_mode, ref_symbol, trade_symbol, start_date, end_date, threshold_pct, sim_direction, lag_minutes, initial_cash, trade_amount, buy_start_time, sell_end_time):
+def run_simulation(n_clicks, stored_data, sim_mode, ref_symbol, trade_symbol, start_date, end_date, threshold_pct, sim_direction, lag_minutes, initial_cash, trade_amount, buy_start_time, sell_end_time, sim_model_id):
     cb_t0 = time.perf_counter()
     ctx = dash.callback_context
     trigger_id = ctx.triggered[0]['prop_id'] if ctx and ctx.triggered else None
@@ -489,6 +528,9 @@ def run_simulation(n_clicks, stored_data, sim_mode, ref_symbol, trade_symbol, st
         if sim_mode == 'leadlag' and (not ref_symbol or not trade_symbol):
             fig.update_layout(title='Veuillez sélectionner les actions A et B')
             return fig, html.Div('Actions non sélectionnées.'), html.Div(), fig_daily, html.Div(''), None
+        if sim_mode == 'model' and not (ref_symbol and sim_model_id):
+            fig.update_layout(title="Veuillez sélectionner l'action et le modèle")
+            return fig, html.Div("Paramètres insuffisants."), html.Div(), fig_daily, html.Div(''), None
         # Permettre A et B identiques pour les tests
         # if sim_mode == 'leadlag' and ref_symbol == trade_symbol:
         #     fig.update_layout(title='A et B doivent être différentes')
@@ -551,32 +593,56 @@ def run_simulation(n_clicks, stored_data, sim_mode, ref_symbol, trade_symbol, st
                 fig.update_layout(title='Trop peu de points minute sur la période')
                 return fig, html.Div('Séries trop courtes.'), html.Div(), fig_daily, html.Div(''), None
         else:
+            # timewindow ou model (préparation spécifique plus bas pour modèle)
             series_A = series_map.get(ref_symbol)
             if series_A is None:
                 # Fallback: utiliser la première série disponible si la clé diffère
                 if len(series_map) >= 1:
                     alt_symbol, alt_series = next(iter(series_map.items()))
-                    logging.warning(f"Timewindow: fallback série sur {alt_symbol}")
+                    logging.warning(f"Timewindow/Model: fallback série sur {alt_symbol}")
                     ref_symbol = alt_symbol
                     series_A = alt_series
                 else:
                     fig.update_layout(title='Données insuffisantes pour la période (A)')
                     return fig, html.Div('Intraday insuffisant pour A.'), html.Div(), fig_daily, html.Div(''), None
-            t_align_start = time.perf_counter()
-            aligned, perf_align = align_minute_with_perf({ref_symbol: series_A}, start_dt, end_dt_exclusive)
-            t_align_end = time.perf_counter()
-            # Filtrage aux heures de marché pour réduire le nombre de points traités
-            if buy_start_time and sell_end_time and not aligned.empty:
-                try:
-                    bh, bm = map(int, str(buy_start_time).split(':'))
-                    sh, sm = map(int, str(sell_end_time).split(':'))
-                    mins = aligned.index.hour * 60 + aligned.index.minute
-                    aligned = aligned[(mins >= (bh * 60 + bm)) & (mins <= (sh * 60 + sm))]
-                except Exception:
-                    pass
-            if aligned.shape[0] < 10:
-                fig.update_layout(title='Trop peu de points minute sur la période (A)')
-                return fig, html.Div('Série A trop courte.'), html.Div(), fig_daily, html.Div(''), None
+            if sim_mode == 'model':
+                # Pour le modèle: récupérer DataFrame complet (openPrice, volume) et resampler à la minute
+                t_align_start = time.perf_counter()
+                df_ref = fetch_intraday_dataframe(shM, ref_symbol, start_dt, end_dt_exclusive)
+                if df_ref is None or df_ref.empty:
+                    fig.update_layout(title='Aucune donnée (modèle) pour la période')
+                    return fig, html.Div("Données insuffisantes."), html.Div(), fig_daily, html.Div(''), None
+                df_ref = df_ref.resample('1min').last().ffill().bfill()
+                aligned = df_ref[(df_ref.index >= start_dt) & (df_ref.index < end_dt_exclusive)].dropna(how='all')
+                t_align_end = time.perf_counter()
+                # Filtrage horaires
+                if buy_start_time and sell_end_time and not aligned.empty:
+                    try:
+                        bh, bm = map(int, str(buy_start_time).split(':'))
+                        sh, sm = map(int, str(sell_end_time).split(':'))
+                        mins = aligned.index.hour * 60 + aligned.index.minute
+                        aligned = aligned[(mins >= (bh * 60 + bm)) & (mins <= (sh * 60 + sm))]
+                    except Exception:
+                        pass
+                if aligned.shape[0] < 10:
+                    fig.update_layout(title='Trop peu de points minute sur la période (A)')
+                    return fig, html.Div('Série A trop courte.'), html.Div(), fig_daily, html.Div(''), None
+            else:
+                t_align_start = time.perf_counter()
+                aligned, perf_align = align_minute_with_perf({ref_symbol: series_A}, start_dt, end_dt_exclusive)
+                t_align_end = time.perf_counter()
+                # Filtrage aux heures de marché pour réduire le nombre de points traités
+                if buy_start_time and sell_end_time and not aligned.empty:
+                    try:
+                        bh, bm = map(int, str(buy_start_time).split(':'))
+                        sh, sm = map(int, str(sell_end_time).split(':'))
+                        mins = aligned.index.hour * 60 + aligned.index.minute
+                        aligned = aligned[(mins >= (bh * 60 + bm)) & (mins <= (sh * 60 + sm))]
+                    except Exception:
+                        pass
+                if aligned.shape[0] < 10:
+                    fig.update_layout(title='Trop peu de points minute sur la période (A)')
+                    return fig, html.Div('Série A trop courte.'), html.Div(), fig_daily, html.Div(''), None
 
         # Backtest via service
         t_bt_start = time.perf_counter()
@@ -595,7 +661,7 @@ def run_simulation(n_clicks, stored_data, sim_mode, ref_symbol, trade_symbol, st
                 sell_end_time=sell_end_time,
                 direction=sim_direction
             )
-        else:
+        elif sim_mode == 'timewindow':
             bt = backtest_time_window(
                 aligned_prices=aligned,
                 symbol=ref_symbol,
@@ -603,6 +669,20 @@ def run_simulation(n_clicks, stored_data, sim_mode, ref_symbol, trade_symbol, st
                 per_trade_amount=per_trade,
                 buy_start_time=buy_start_time or '09:30',
                 sell_end_time=sell_end_time or '16:00'
+            )
+        else:
+            # Simulation par modèle
+            try:
+                model = shM.load_model_from_db(sim_model_id)
+            except Exception as e:
+                fig.update_layout(title=f"Erreur chargement modèle: {e}")
+                return fig, html.Div('Erreur modèle.'), html.Div(), fig_daily, html.Div(''), None
+            bt = backtest_model_intraday(
+                day_aligned_df=aligned[['openPrice', 'volume']] if 'volume' in aligned.columns else aligned[['openPrice']],
+                model=model,
+                initial_cash=cash,
+                per_trade_amount=per_trade,
+                k_trades=2,
             )
         t_bt_end = time.perf_counter()
         equity_curve_times = bt['equity_times']
