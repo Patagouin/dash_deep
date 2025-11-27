@@ -1,7 +1,7 @@
 from dash import dcc, html, dash_table
 from dash.dependencies import Input, Output, State
 from app import app, shM
-from web.components.navigation import create_navigation
+from web.components.navigation import create_navigation, create_page_help
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -218,7 +218,36 @@ def compute_correlation_heatmap(selected_symbols, selected_sector, lag_value, st
 
 
 def layout_content():
+    help_text = """
+### Analyse de Données
+
+Cette page est votre tableau de bord statistique pour comprendre les dynamiques du marché et les relations entre les actions.
+
+#### 1. Filtres
+Sélectionnez les actifs à analyser :
+*   **Secteurs** : Filtrez par industrie (ex: Tech, Santé).
+*   **Actions** : Choisissez des tickers spécifiques.
+
+#### 2. Corrélations (Heatmap)
+Une carte thermique montrant quelles actions bougent ensemble.
+*   **Pourquoi ?** Pour diversifier votre portefeuille ou trouver des paires de trading.
+*   **Couleur** :
+    *   Jaune/Vert clair : Forte corrélation positive (elles montent ensemble).
+    *   Bleu/Violet : Pas de corrélation ou inverse.
+*   **Max (0-30 min)** : Le système cherche automatiquement si une action suit l'autre avec un décalage de 0 à 30 minutes.
+
+#### 3. Corrélation Croisée (Scatter Plot)
+Visualisez l'évolution de la corrélation jour après jour entre deux actifs. Cela permet de voir si leur relation est stable ou changeante.
+
+#### 4. Potentiels Quotidiens
+Un graphique montrant l'évolution du "score de potentiel" calculé par nos algorithmes pour les actions sélectionnées sur les 15 derniers jours.
+
+#### 5. Top 10 Corrélations
+Un outil puissant qui scanne **toutes** les paires d'actions possibles pour vous sortir les 10 meilleures corrélations (avec décalage temporel) du moment. Idéal pour repérer des opportunités de Lead-Lag.
+"""
+
     return html.Div([
+        create_page_help("Aide Analyse", help_text),
         html.H3('Analyse', style={'color': '#FF8C00'}),
         # Stores persistants pour conserver les sorties calculées
         dcc.Store(id='analyse_heatmap_store', storage_type='session'),
@@ -399,7 +428,7 @@ def crosscorr_daily_scatter(selected_symbols, selected_sector):
             fig = go.Figure(data=go.Scatter(x=xs, y=ys, mode='markers', text=texts,
                                              hovertemplate='%{x|%Y-%m-%d} · %{text}<br>corr=%{y:.3f}<extra></extra>'))
             fig.update_layout(template='plotly_dark', paper_bgcolor='#000000', plot_bgcolor='#000000', font=dict(color='#FFFFFF'),
-                              title=f"Corrélation croisée journalière (0–30 min) — {s1} vs {s2}",
+                              title=f"Corrélation croisée journalière (0–30 min) — {symbols[0]} vs {symbols[1]}",
                               xaxis_title='Jour', yaxis_title='Corrélation')
         return fig
     except Exception as e:
@@ -688,4 +717,3 @@ def compute_top10_global_correlations(n_clicks, n_intervals):
         content = html.Pre(header, style={'whiteSpace': 'pre-wrap', 'color': '#FFFFFF'})
     # Désactiver le polling si le job a fini
     return content, (False if running else True)
-

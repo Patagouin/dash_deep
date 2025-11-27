@@ -9,6 +9,11 @@ import traceback
 import logging
 import json
 import os
+import datetime
+import time
+import subprocess
+import pandas as pd
+from web.services.timeseries import fetch_intraday_dataframe
 
 
 @app.callback(
@@ -594,6 +599,7 @@ def load_training_preset(n, preset_name):
         State('transformer_num_heads_saved', 'value'),
         State('transformer_dropout_saved', 'value'),
         State('transformer_ff_multiplier_saved', 'value'),
+        State('model_save_name', 'value'),
     ],
     background=True,
     progress=[
@@ -610,7 +616,7 @@ def train_and_display_progress(set_progress, n_clicks, selected_symbols, trainin
                                nb_units, layers, learning_rate, loss_function, model_type, heads, dropout, ffmul, epochs,
                                look_back_opts, stride_opts, nb_y_opts,
                                nb_units_opts, layers_opts, learning_rate_opts, loss_opts,
-                               model_type_opts_saved, heads_opts_saved, dropout_opts_saved, ffmul_opts_saved):
+                               model_type_opts_saved, heads_opts_saved, dropout_opts_saved, ffmul_opts_saved, user_model_name):
     # Validation champs requis selon architecture
     missing = []
     if not selected_symbols:
@@ -722,6 +728,8 @@ def train_and_display_progress(set_progress, n_clicks, selected_symbols, trainin
         except Exception:
             dark_fig = go.Figure()
         set_progress((progress_children, dark_fig))
+        # Horodatage début entraînement (incluant tuning)
+        train_t0 = datetime.datetime.now()
         try:
             params_dump = {
                 'symbol': symbol,
@@ -838,7 +846,9 @@ def train_and_display_progress(set_progress, n_clicks, selected_symbols, trainin
             except Exception:
                 trainScore = None
                 testScore = None
-            model_name = hps.get('project_name', f'pred_{symbol}_ui')
+            # Priorité au nom saisi par l'utilisateur, sinon project_name, sinon défaut
+            model_name = (user_model_name or hps.get('project_name') or f'pred_{symbol}_ui')
+            model_name = str(model_name).strip() if model_name is not None else f'pred_{symbol}_ui'
             # Préparer métadonnées (JSON sérialisables)
             try:
                 hps_to_save = {
@@ -868,9 +878,45 @@ def train_and_display_progress(set_progress, n_clicks, selected_symbols, trainin
                     'percent_train_test': data_info.get('percent_train_test'),
                     'trade_volume': data_info.get('trade_volume'),
                     'k_trades': data_info.get('k_trades'),
+                    # Nouveau: liste des symboles utilisés pour l'entraînement (multi-actions)
+                    'symbols': selected_symbols,
                 }
             except Exception:
                 data_info_to_save = None
+            # Fin entraînement / durée / commit / metrics
+            train_t1 = datetime.datetime.now()
+            duration_s = (train_t1 - train_t0).total_seconds()
+            try:
+                git_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
+            except Exception:
+                git_commit = None
+            try:
+                metrics_payload = {}
+                if history and hasattr(history, 'history'):
+                    tr_loss = history.history.get('loss')
+                    vl_loss = history.history.get('val_loss')
+                    tr_da = history.history.get('directional_accuracy') or history.history.get('main_output_directional_accuracy')
+                    vl_da = history.history.get('val_directional_accuracy') or history.history.get('val_main_output_directional_accuracy')
+                    if tr_loss:
+                        metrics_payload['final_train_loss'] = float(tr_loss[-1])
+                    if vl_loss:
+                        metrics_payload['final_val_loss'] = float(vl_loss[-1])
+                    if tr_da:
+                        metrics_payload['final_train_da'] = float(tr_da[-1])
+                    if vl_da:
+                        metrics_payload['final_val_da'] = float(vl_da[-1])
+                    metrics_payload['best_trial_score'] = float(best_trial.score) if 'best_trial' in locals() and hasattr(best_trial, 'score') else None
+                else:
+                    metrics_payload = None
+            except Exception:
+                metrics_payload = None
+            meta_payload = {
+                'training_start': train_t0,
+                'training_end': train_t1,
+                'training_duration_seconds': duration_s,
+                'git_commit': git_commit,
+                'metrics': metrics_payload,
+            }
             shM.save_model(
                 shareObj,
                 best_model,
@@ -880,6 +926,7 @@ def train_and_display_progress(set_progress, n_clicks, selected_symbols, trainin
                 history=history.history if hasattr(history, 'history') else None,
                 hps=hps_to_save,
                 data_info=data_info_to_save,
+                meta=meta_payload,
             )
         except Exception as e:
             logging.exception("[TRAIN] Save after final fit failed")
@@ -969,6 +1016,7 @@ def load_saved_model_and_display(n_clicks, selected_model_id):
         date_val = meta.get('date')
         hps = meta.get('hps') or {}
         data_info = meta.get('data_info') or {}
+        symbols_meta = meta.get('symbols') or data_info.get('symbols') or []
 
         # Graphique depuis l'historique si dispo
         history = meta.get('history') or {}
@@ -998,6 +1046,15 @@ def load_saved_model_and_display(n_clicks, selected_model_id):
             f"Score train (moy): {train_s if train_s is not None else '-'}",
             f"Score val (moy): {test_s if test_s is not None else '-'}",
         ]
+        # Afficher les symboles d'entraînement si disponibles
+        try:
+            if symbols_meta:
+                if isinstance(symbols_meta, list):
+                    metrics_lines.append(f"Symbols: {', '.join([str(s) for s in symbols_meta])}")
+                else:
+                    metrics_lines.append(f"Symbols: {str(symbols_meta)}")
+        except Exception:
+            pass
         # Ajouter résumé HPS
         try:
             if hps:
@@ -1028,3 +1085,122 @@ def load_saved_model_and_display(n_clicks, selected_model_id):
         empty_fig = go.Figure(); empty_fig.update_layout(template='plotly_dark')
         return err, empty_fig
 
+
+# === Mise à jour sur la dernière journée (UI prédiction) ===
+@app.callback(
+    Output('update_model_status', 'children'),
+    Input('update_model_last_day', 'n_clicks'),
+    State('saved_model_dropdown', 'value'),
+    prevent_initial_call=True,
+)
+def update_model_last_day(n_clicks, model_id):
+    if not n_clicks or not model_id:
+        return dash.no_update
+    try:
+        # 1) Métadonnées du modèle existant
+        meta = shM.get_model_metadata(model_id) or {}
+        data_info = meta.get('data_info') or {}
+        hps = meta.get('hps') or {}
+        symbols = meta.get('symbols') or data_info.get('symbols') or []
+        if not symbols:
+            return "Impossible de déterminer les symboles d'entraînement du modèle."
+        symbol = symbols[0]
+        # 2) Charger un shareObj et déterminer dernière journée complète
+        dfShares = shM.getRowsDfByKeysValues(['symbol'], [symbol])
+        if dfShares is None or dfShares.empty:
+            return f"Symbole inconnu: {symbol}"
+        shareObj = dfShares.iloc[0]
+        # Fenêtre: de J-1 00:00 à J 00:00 sur la dernière journée complète disponible
+        today = pd.Timestamp.today().normalize()
+        # Récupérer deux derniers jours pour assurer une journée complète
+        start_dt = today - pd.Timedelta(days=2)
+        end_dt_excl = today + pd.Timedelta(days=1)
+        df = fetch_intraday_dataframe(shM, symbol, start_dt, end_dt_excl)
+        if df is None or df.empty:
+            return "Pas de données intraday disponibles."
+        df = df.sort_index()
+        last_day = df.index.normalize().max()
+        day_df = df[df.index.normalize() == last_day]
+        if day_df is None or day_df.empty:
+            return "Dernière journée introuvable."
+        # Resampler 1min et nettoyer
+        day_df = day_df.resample('1min').last().ffill().bfill()
+        # 3) Préparer data_info minimal
+        look_back_x = int(data_info.get('look_back_x') or 30)
+        stride_x = int(data_info.get('stride_x') or 1)
+        nb_y = int(data_info.get('nb_y') or 1)
+        features = data_info.get('features') or ['openPrice', 'volume']
+        return_type = data_info.get('return_type') or 'yield'
+        # Déterminer nb_quots_by_day via horaires (fallback = len jour)
+        try:
+            nb_quots_by_day = max(1, (shareObj.closeRichMarketTime.hour*60 + shareObj.closeRichMarketTime.minute) - (shareObj.openRichMarketTime.hour*60 + shareObj.openRichMarketTime.minute) + 1)
+        except Exception:
+            nb_quots_by_day = max(1, len(day_df))
+        di = {
+            'look_back_x': look_back_x,
+            'stride_x': stride_x,
+            'nb_y': nb_y,
+            'features': features,
+            'return_type': return_type,
+            'nb_quots_by_day': nb_quots_by_day,
+            'k_trades': (data_info.get('k_trades') or 0),
+            'trade_volume': (data_info.get('trade_volume') or 0)
+        }
+        # Restreindre aux features présentes
+        use_cols = [c for c in features if c in day_df.columns]
+        if not use_cols:
+            use_cols = ['openPrice'] if 'openPrice' in day_df.columns else []
+        ds = day_df[use_cols]
+        # 4) Construire X/Y sur une journée
+        try:
+            trainX, trainY = pred_ut.create_X_Y(ds, di)
+        except Exception:
+            return "Impossible de générer les séquences pour la journée."
+        if trainX is None or len(trainX) == 0:
+            return "Séquences insuffisantes pour entraînement (regardez look_back/stride)."
+        # 5) Charger le modèle et compiler
+        model = shM.load_model_from_db(model_id)
+        # Recompiler selon les HPS/return_type
+        try:
+            import tensorflow as tf
+            from tensorflow.keras.optimizers import Adam
+            lr = (hps.get('learning_rate') if isinstance(hps.get('learning_rate'), (float, int)) else (hps.get('learning_rate') or 0.001))
+            loss_name = hps.get('loss') or 'mse'
+            loss_fn = tf.keras.losses.Huber() if loss_name == 'huber_loss' else loss_name
+            metrics = []
+            if return_type == 'yield':
+                metrics.append(pred_ut.directional_accuracy)
+                if (data_info.get('k_trades') and data_info.get('trade_volume')):
+                    metrics.append(pred_ut.make_profit_metric(int(data_info['k_trades']), float(data_info['trade_volume'])))
+            model.compile(optimizer=Adam(learning_rate=float(lr)), loss=loss_fn, metrics=metrics)
+        except Exception as e:
+            logging.warning(f"[UPDATE] Recompilation échouée, fallback compile par défaut: {e}")
+            model.compile(optimizer='adam', loss='mse')
+        # 6) Entraîner brièvement (1 epoch)
+        hist = model.fit(trainX, trainY, epochs=1, verbose=0)
+        # 7) Sauvegarder sous un nouvel id
+        new_id = f"{model_id}_upd_{last_day.strftime('%Y%m%d')}"
+        # Préparer un minimum d'hps/data_info/meta mis à jour
+        hps_to_save = hps
+        data_info_to_save = { **data_info, 'symbols': symbols }
+        meta_payload = {
+            'notes': f"Update J-1 sur {symbol} à partir de {model_id}",
+            'metrics': {
+                'last_update_train_loss': float(hist.history.get('loss')[-1]) if hist and hist.history.get('loss') else None
+            }
+        }
+        shM.save_model(
+            shareObj,
+            model,
+            new_id,
+            trainScore=None,
+            testScore=None,
+            history=hist.history if hasattr(hist, 'history') else None,
+            hps=hps_to_save,
+            data_info=data_info_to_save,
+            meta=meta_payload,
+        )
+        return f"Modèle mis à jour sur la dernière journée et sauvegardé sous: {new_id}"
+    except Exception as e:
+        logging.exception("[UPDATE] Echec mise à jour J-1")
+        return f"Erreur mise à jour: {e}"

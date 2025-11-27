@@ -150,25 +150,69 @@ class Shares:
         # 4. Sauvegarde déléguée à l'appelant (après l'entraînement final)
         return best_model, best_hps, tuner
 
-    def save_model(self, shareObj, model, model_name, trainScore=None, testScore=None, history=None, hps=None, data_info=None):
+    def save_model(self, shareObj, model, model_name, trainScore=None, testScore=None, history=None, hps=None, data_info=None, meta=None):
         try:
             logging.info("[TRAIN|Shares] save model: start")
             model.save("model.keras")
             with open("model.keras", "rb") as file:
                 model_binary = file.read()
+            # Calculer hash et taille
+            try:
+                import hashlib
+                sha256 = hashlib.sha256(model_binary).hexdigest()
+                size_bytes = len(model_binary)
+            except Exception:
+                sha256 = None
+                size_bytes = None
+            # Enrichir meta
+            try:
+                import tensorflow as tf
+                import socket, getpass, sys, platform
+                from datetime import datetime
+                meta = meta or {}
+                if 'framework' not in meta:
+                    meta['framework'] = 'tensorflow'
+                if 'framework_version' not in meta:
+                    meta['framework_version'] = getattr(tf, '__version__', None)
+                if 'model_format' not in meta:
+                    meta['model_format'] = 'keras'
+                if 'model_sha256' not in meta:
+                    meta['model_sha256'] = sha256
+                if 'model_size_bytes' not in meta:
+                    meta['model_size_bytes'] = size_bytes
+                if 'trained_by' not in meta:
+                    try:
+                        meta['trained_by'] = getpass.getuser()
+                    except Exception:
+                        meta['trained_by'] = None
+                if 'training_host' not in meta:
+                    try:
+                        meta['training_host'] = socket.gethostname()
+                    except Exception:
+                        meta['training_host'] = None
+                if 'training_env' not in meta:
+                    try:
+                        gpus = getattr(tf.config, 'list_physical_devices', lambda *_: [])('GPU')
+                        meta['training_env'] = {
+                            'python': sys.version.split()[0],
+                            'platform': platform.platform(),
+                            'num_gpus': len(gpus) if gpus is not None else 0,
+                        }
+                    except Exception:
+                        meta['training_env'] = None
+            except Exception:
+                pass
             logging.info(f"[TRAIN|Shares] saveModel to DB: name={model_name} train={trainScore} test={testScore}")
-            self.__sqlObj.saveModel(shareObj, model_name, model_binary, trainScore, testScore, history=history, hps=hps, data_info=data_info)
+            self.__sqlObj.saveModel(shareObj, model_name, model_binary, trainScore, testScore, history=history, hps=hps, data_info=data_info, meta=meta)
             logging.info("[TRAIN|Shares] save model: done")
         except Exception as e:
             logging.exception("[TRAIN|Shares] Failed to save model")
             raise
 
     def list_models_for_symbol(self, symbol: str):
-        df = self.getRowsDfByKeysValues('symbol', symbol)
-        if df.empty:
-            return []
-        share = df.iloc[0]
-        return self.__sqlObj.listModelsForShare(share)
+        # Utiliser la recherche par symbole (colonne JSONB `symbols` si disponible),
+        # avec fallback auto côté SqlCom sur l'ancien schéma basé sur idShare.
+        return self.__sqlObj.listModelsBySymbol(symbol)
 
     def load_model_from_db(self, model_id):
         """Charge un modèle Keras depuis la BDD (par id) et retourne l'objet modèle Keras."""

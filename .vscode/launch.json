@@ -1,0 +1,26 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Dash App",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/web/main.py",  // Chemin vers votre fichier main.py
+            "console": "integratedTerminal",  // Utiliser le terminal intégré de VS Code
+            "justMyCode": true,
+            "env": {
+                "FLASK_APP": "web.main:app",  // Assurez-vous que l'importation est correcte
+                "FLASK_DEBUG": "1"  // Remplace FLASK_ENV par FLASK_DEBUG
+            },
+            "cwd": "${workspaceFolder}/web"  // Ajout du paramètre cwd pour définir le répertoire de travail
+        },
+        {
+            "name": "Python: Update Data Launcher",
+            "type": "python",  // Utilisation du nouveau débogueur Python
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/update_data_launcher.py",  // Chemin vers votre fichier update_data_launcher.py
+            "console": "integratedTerminal",  // Option pour exécuter dans le terminal intégré
+            "cwd": "${workspaceFolder}/scripts"  // Ajout du paramètre cwd pour définir le répertoire de travail
+        }
+    ]
+}

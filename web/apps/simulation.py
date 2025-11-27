@@ -4,7 +4,7 @@ from app import app, shM
 from web.services.timeseries import fetch_intraday_series, align_minute, fetch_intraday_series_with_perf, align_minute_with_perf, fetch_intraday_dataframe
 from web.services.backtest import backtest_lag_correlation, backtest_time_window
 from web.services.model_strategy import backtest_model_intraday
-from web.components.navigation import create_navigation
+from web.components.navigation import create_navigation, create_page_help
 from web.services.sim_builders import build_equity_figure, build_daily_outputs, build_trades_table, build_summary
 import pandas as pd
 import numpy as np
@@ -13,6 +13,7 @@ import logging
 import dash
 from dash import callback_context as ctx
 import time
+import json
 
 
 def _get_symbols_options():
@@ -35,7 +36,45 @@ def layout_content():
     today = pd.Timestamp.today().normalize()
     fifteen_days_ago = today - pd.Timedelta(days=15)
 
+    help_text = """
+### Simulation (Backtesting)
+
+Cette page est dédiée au test de stratégies de trading sur des données historiques pour évaluer leur rentabilité potentielle avant de les utiliser en réel.
+
+#### Modes de Simulation
+
+1.  **Lead-Lag (Corrélation)** :
+    *   Stratégie basée sur des paires d'actions.
+    *   On suppose que l'action A (Leader) influence l'action B (Suiveuse) avec un certain retard.
+    *   Si A monte, on achète B. Si A baisse, on vend B.
+    *   **Paramètres** :
+        *   `Lag` : Retard en minutes entre A et B.
+        *   `Seuil` : Variation minimum de A pour déclencher un ordre sur B.
+
+2.  **Fenêtre Horaire** :
+    *   Stratégie simple et systématique.
+    *   Achète une action à une heure fixe (ex: 09:30) et la revend à une autre heure fixe (ex: 16:00).
+    *   Permet de tester la tendance intraday moyenne d'un actif.
+
+3.  **Modèle IA** :
+    *   Utilise un modèle entraîné dans la page "Prédiction".
+    *   Le modèle analyse le marché minute par minute et décide d'acheter ou vendre.
+    *   C'est le test ultime pour valider votre IA.
+
+#### Paramètres Généraux
+*   **Période** : Dates de début et fin du backtest.
+*   **Horaires** : Heures autorisées pour trader (pour éviter les heures creuses ou la nuit).
+*   **Capital initial** : Somme d'argent virtuelle de départ.
+*   **Montant par trade** : Taille de chaque position.
+
+#### Résultats
+*   **Courbe de capital** : Graphique montrant l'évolution de votre portefeuille. Si ça monte, c'est gagné !
+*   **Tableau journalier** : Détail des gains/pertes jour par jour.
+*   **Transactions** : Liste complète de tous les ordres d'achat et de vente exécutés par la simulation.
+"""
+
     return html.Div([
+        create_page_help("Aide Simulation", help_text),
         html.H3('Simulation', style=
         {
             'color': '#FF8C00'
@@ -91,6 +130,7 @@ def layout_content():
                     persistence=True, persistence_type='session'
                 )
             ], id='panel_model', style={'display': 'none'}),
+            html.Div(id='sim_model_meta', style={'gridColumn': '1 / -1', 'color': '#CCCCCC'}),
             html.Div([
                 html.Label('Période'),
                 dcc.DatePickerRange(
@@ -159,7 +199,7 @@ def layout_content():
                     inline=True,
                     persistence=True, persistence_type='session'
                 )
-            ]),
+            ], id='panel_direction'),
             html.Div([
                 html.Label('Décalage (minutes)'),
                 dcc.Input(
@@ -337,7 +377,8 @@ layout = layout_content()
         Output('panel_trade_symbol', 'style'),
         Output('panel_threshold', 'style'),
         Output('panel_lag', 'style'),
-        Output('panel_model', 'style')
+        Output('panel_model', 'style'),
+        Output('panel_direction', 'style')
     ],
     [
         Input('sim_tabs', 'value')
@@ -347,11 +388,11 @@ def toggle_panels(sim_mode):
     show_style = { 'display': 'block' }
     hide_style = { 'display': 'none' }
     if sim_mode == 'timewindow':
-        return hide_style, hide_style, hide_style, hide_style
+        return hide_style, hide_style, hide_style, hide_style, hide_style
     if sim_mode == 'model':
         # Modèle: une seule action + modèle, pas de seuil/lag
-        return hide_style, hide_style, hide_style, show_style
-    return show_style, show_style, show_style, hide_style
+        return hide_style, hide_style, hide_style, show_style, hide_style
+    return show_style, show_style, show_style, hide_style, show_style
 
 
 @app.callback(
@@ -375,6 +416,56 @@ def populate_sim_models(symbol):
     except Exception:
         return []
 
+
+@app.callback(
+    Output('sim_model_meta', 'children'),
+    [Input('sim_saved_model', 'value')]
+)
+def show_sim_model_metadata(model_id):
+    try:
+        if not model_id:
+            return ''
+        meta = shM.get_model_metadata(model_id) or {}
+        lines = []
+        # Champs principaux
+        lines.append(f"Modèle: {model_id}")
+        if meta.get('date'):
+            lines.append(f"Date: {meta.get('date')}")
+        if meta.get('trainScore') is not None or meta.get('testScore') is not None:
+            lines.append(f"Scores: train={meta.get('trainScore', '-')}, val={meta.get('testScore', '-')}")
+        # Symbols
+        symbols = meta.get('symbols') or (meta.get('data_info') or {}).get('symbols')
+        if symbols:
+            if isinstance(symbols, list):
+                lines.append("Symbols: " + ", ".join([str(s) for s in symbols]))
+            else:
+                lines.append(f"Symbols: {symbols}")
+        # HPS bref
+        hps = meta.get('hps') or {}
+        if hps:
+            arch = hps.get('architecture'); layers = hps.get('layers'); units = hps.get('nb_units'); lr = hps.get('learning_rate'); loss = hps.get('loss')
+            parts = []
+            if arch: parts.append(f"arch={arch}")
+            if layers is not None: parts.append(f"layers={layers}")
+            if units is not None: parts.append(f"units={units}")
+            if lr is not None: parts.append(f"lr={lr}")
+            if loss is not None: parts.append(f"loss={loss}")
+            if parts:
+                lines.append("HPS: " + " | ".join([str(p) for p in parts]))
+        # Data bref
+        data_info = meta.get('data_info') or {}
+        if data_info:
+            lb = data_info.get('look_back_x'); st = data_info.get('stride_x'); ny = data_info.get('nb_y'); split = data_info.get('percent_train_test')
+            parts = []
+            if lb is not None: parts.append(f"look_back={lb}")
+            if st is not None: parts.append(f"stride={st}")
+            if ny is not None: parts.append(f"nb_y={ny}")
+            if split is not None: parts.append(f"split={split}%")
+            if parts:
+                lines.append("Data: " + " | ".join([str(p) for p in parts]))
+        return html.Pre("\n".join([str(x) for x in lines]), style={'whiteSpace': 'pre-wrap'})
+    except Exception:
+        return ''
 
 @app.callback(
     [
@@ -795,5 +886,3 @@ def run_simulation(n_clicks, stored_data, sim_mode, ref_symbol, trade_symbol, st
         logging.exception('Erreur simulation')
         fig.update_layout(title=f"Erreur simulation: {e}")
         return fig, html.Div('Erreur lors de la simulation.'), html.Div(), fig_daily, html.Div(''), None
-
-

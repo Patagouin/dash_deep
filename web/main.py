@@ -24,6 +24,6 @@ if __name__ == '__main__':
         app.server,
         debug=False,  # Désactiver le mode debug
         port=8050,
-        allow_unsafe_werkzeug=False,
+        allow_unsafe_werkzeug=True,
         log_output=False  # Désactiver les logs de sortie
     )

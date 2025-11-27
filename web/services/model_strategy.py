@@ -140,6 +140,16 @@ def backtest_model_intraday(day_aligned_df: pd.DataFrame,
             else:
                 sell_price = float(day_df.iloc[sell_i].select_dtypes(include=[np.number]).iloc[0])
             pnl = float((sell_price - buy_price) * qty)
+            # Enregistrer l'ordre d'entrée (BUY)
+            trades.append({
+                'time': str(t0_ts),
+                'action': 'BUY',
+                'qty': qty,
+                'price': buy_price,
+                'entry_time': str(t0_ts),
+                'entry_price': buy_price,
+                'pnl': 0.0
+            })
             trades.append({
                 'time': str(sell_ts),
                 'action': 'SELL',

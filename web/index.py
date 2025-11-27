@@ -4,6 +4,7 @@ from web.apps import dashboard, update, prediction, config, transaction  # Impor
 from web.apps import analyse
 from web.apps import simulation
 from web.apps import visualisation
+from web.apps import playground
 from dash import dcc, html
 from app import app
 
@@ -37,6 +38,9 @@ def display_page(pathname):
     elif pathname == '/simulation':
         print("Loading simulation layout")
         return simulation.layout
+    elif pathname == '/playground':
+        print("Loading playground layout")
+        return playground.layout
     elif pathname == '/config':  # Add the config page route
         print("Loading config layout")  # Debugging print
         return config.layout

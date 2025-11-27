@@ -22,6 +22,12 @@ def get_results_layout():
             ], style={'flex': '3', 'minWidth': '260px'}),
             html.Div([
                 html.Button('Charger le modèle', id='load_saved_model', n_clicks=0, className='update-button', style={'width': '100%'}),
+            ], style={'flex': '1', 'minWidth': '160px', 'alignSelf': 'end'}),
+            html.Div([
+                html.Button('Mettre à jour (J-1)', id='update_model_last_day', n_clicks=0, className='update-button', style={'width': '100%', 'backgroundColor': '#4CAF50'}),
+            ], style={'flex': '1', 'minWidth': '180px', 'alignSelf': 'end'}),
+            html.Div([
+                html.Div(id='update_model_status', style={'color': '#4CAF50', 'whiteSpace': 'pre-wrap'})
             ], style={'flex': '1', 'minWidth': '160px', 'alignSelf': 'end'})
         ], style={'display': 'grid', 'gridTemplateColumns': '1fr 200px', 'gap': '10px', 'padding': '0 20px 10px 20px', 'backgroundColor': '#1E1E1E', 'borderRadius': '8px'}),
 

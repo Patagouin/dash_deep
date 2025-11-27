@@ -575,6 +575,16 @@ def get_parameters_layout():
 
         # Training button
         html.Div([
+            html.Div([
+                html.Label('Nom du modèle (optionnel)'),
+                dcc.Input(
+                    id='model_save_name',
+                    type='text',
+                    placeholder='Ex: pred_AAPL_ui',
+                    style={'width': '100%', 'color': '#FF8C00'},
+                    persistence=True, persistence_type='session'
+                )
+            ], style={'marginBottom': '6px'}),
             html.Button(
                 'Entraîner le Modèle',
                 id='train_button',

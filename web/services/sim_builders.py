@@ -280,8 +280,11 @@ def build_summary(sim_mode,
     realized_sells = [t for t in trades if t.get('action') == 'SELL']
     realized_pnls = [t.get('pnl', 0.0) for t in realized_sells]
     total_pnl = float(np.nansum(realized_pnls)) if realized_pnls else 0.0
-    # Win rate historique (sur nb BUY)
-    num_trades = int(sum(1 for t in trades if t.get('action') == 'BUY'))
+    # Win rate historique
+    buys_count = int(sum(1 for t in trades if t.get('action') == 'BUY'))
+    sells_count = int(sum(1 for t in trades if t.get('action') == 'SELL'))
+    # Si pas de BUY (cas backtest modèle), compter les SELL comme nombre de trades
+    num_trades = buys_count if buys_count > 0 else sells_count
     wins = int(sum(1 for t in realized_pnls if t > 0))
     win_rate = (wins / num_trades * 100.0) if num_trades > 0 else 0.0
     # Win rate non‑zéro (exclut pnl == 0 des SELL)
@@ -301,8 +304,8 @@ def build_summary(sim_mode,
         f"Valeur finale: {final_value:.2f} € ({ret_pct:.2f}%)",
         f"Minutes utilisées: {overlap_minutes}",
         f"Jours couverts: {num_days}",
-        (f"Durée de détention (lead-lag): {lag} min" if sim_mode=='leadlag' else "Stratégie: Fenêtre horaire"),
-        (f"Fenêtre signal A: {lag} min" if sim_mode=='leadlag' else f"Fenêtre quotidienne: {buy_start_time or '09:30'} → {sell_end_time or '16:00'}"),
+        (f"Durée de détention (lead-lag): {lag} min" if sim_mode=='leadlag' else ("Stratégie: Modèle" if sim_mode=='model' else "Stratégie: Fenêtre horaire")),
+        (f"Fenêtre signal A: {lag} min" if sim_mode=='leadlag' else ("" if sim_mode=='model' else f"Fenêtre quotidienne: {buy_start_time or '09:30'} → {sell_end_time or '16:00'}")),
         f"Gain moyen/jour: {avg_daily_return_pct:.2f}%"
     ]
 

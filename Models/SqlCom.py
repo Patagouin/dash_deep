@@ -849,27 +849,122 @@ class SqlCom:
         except Exception as e:
             print(f"Erreur lors de l'extraction des données: {e}")
 
-    def saveModel(self, shareObj, modelName, modelBin, trainScore, testScore, history=None, hps=None, data_info=None):
+    def saveModel(self, shareObj, modelName, modelBin, trainScore, testScore, history=None, hps=None, data_info=None, meta=None):
         """Sauvegarde un modèle et ses métadonnées.
 
-        Essaie d'insérer dans les colonnes JSONB (history, hps, data_info) si elles existent.
-        En cas d'échec (colonnes manquantes), retombe sur l'insertion minimale.
+        Nouveaux champs: enregistre les symboles d'entraînement dans une colonne JSONB `symbols`.
+        Fallback automatique: si la colonne `symbols` ou les JSONB manquent, retombe sur l'ancien schéma (avec idShare).
         """
         try:
             current_date = datetime.datetime.now()
-            id_share_int = int(shareObj.idShare) if not isinstance(shareObj.idShare, int) else shareObj.idShare
+            # idShare gardé pour compatibilité rétro si nécessaire
+            id_share_int = None
+            try:
+                id_share_int = int(shareObj.idShare) if not isinstance(shareObj.idShare, int) else shareObj.idShare
+            except Exception:
+                id_share_int = None
+
             train_score_f = float(trainScore) if trainScore is not None else None
             test_score_f = float(testScore) if testScore is not None else None
 
-            # Première tentative: avec colonnes JSONB
+            # Sérialisation JSON
+            history_json = json.dumps(history) if history is not None else None
+            hps_json = json.dumps(hps) if hps is not None else None
+            data_info_json = json.dumps(data_info) if data_info is not None else None
+            meta = meta or {}
+
+            # Extraire la liste des symboles (multi-actions)
+            symbols_list = None
+            try:
+                if isinstance(data_info, dict) and data_info.get('symbols') is not None:
+                    s = data_info.get('symbols')
+                    if isinstance(s, list):
+                        symbols_list = [str(x) for x in s]
+                    elif isinstance(s, str):
+                        symbols_list = [s]
+                if not symbols_list and getattr(shareObj, 'symbol', None):
+                    symbols_list = [str(shareObj.symbol)]
+            except Exception:
+                symbols_list = [str(getattr(shareObj, 'symbol', ''))] if getattr(shareObj, 'symbol', None) else None
+            symbols_json = json.dumps(symbols_list) if symbols_list else None
+
+            # Construire un INSERT dynamique avec le maximum de colonnes disponibles
+            cols = [
+                ('id', modelName),
+                ('model', psycopg2.Binary(modelBin)),
+                ('trainScore', train_score_f),
+                ('testScore', test_score_f),
+                ('date', current_date),
+                ('history', history_json),
+                ('hps', hps_json),
+                ('data_info', data_info_json),
+                ('symbols', symbols_json),
+                # Meta
+                ('model_format', meta.get('model_format')),
+                ('framework', meta.get('framework')),
+                ('framework_version', meta.get('framework_version')),
+                ('model_sha256', meta.get('model_sha256')),
+                ('model_size_bytes', meta.get('model_size_bytes')),
+                ('training_start', meta.get('training_start')),
+                ('training_end', meta.get('training_end')),
+                ('training_duration_seconds', meta.get('training_duration_seconds')),
+                ('trained_by', meta.get('trained_by')),
+                ('training_env', json.dumps(meta.get('training_env')) if meta.get('training_env') is not None else None),
+                ('training_host', meta.get('training_host')),
+                ('git_commit', meta.get('git_commit')),
+                ('metrics', json.dumps(meta.get('metrics')) if meta.get('metrics') is not None else None),
+                ('evaluations', json.dumps(meta.get('evaluations')) if meta.get('evaluations') is not None else None),
+                ('notes', meta.get('notes')),
+                # HPS détaillés
+                ('architecture', (hps or {}).get('architecture')),
+                ('layers', (hps or {}).get('layers')),
+                ('nb_units', (hps or {}).get('nb_units')),
+                ('learning_rate', (hps or {}).get('learning_rate')),
+                ('loss', (hps or {}).get('loss')),
+                ('tuning_method', (hps or {}).get('tuning_method')),
+                ('max_trials', (hps or {}).get('max_trials')),
+                ('executions_per_trial', (hps or {}).get('executions_per_trial')),
+                ('epochs', (hps or {}).get('epochs')),
+                ('transformer_num_heads', (hps or {}).get('transformer_num_heads')),
+                ('transformer_dropout', (hps or {}).get('transformer_dropout')),
+                ('transformer_ff_multiplier', (hps or {}).get('transformer_ff_multiplier')),
+                # Data détaillées
+                ('features', json.dumps((data_info or {}).get('features')) if (data_info or {}).get('features') is not None else None),
+                ('return_type', (data_info or {}).get('return_type')),
+                ('look_back_x', (data_info or {}).get('look_back_x')),
+                ('stride_x', (data_info or {}).get('stride_x')),
+                ('nb_y', (data_info or {}).get('nb_y')),
+                ('nb_days_to_take_dataset', (data_info or {}).get('nb_days_to_take_dataset')),
+                ('percent_train_test', (data_info or {}).get('percent_train_test')),
+                ('trade_volume', (data_info or {}).get('trade_volume')),
+                ('k_trades', (data_info or {}).get('k_trades')),
+                ('dataset_start', (data_info or {}).get('dataset_start')),
+                ('dataset_end', (data_info or {}).get('dataset_end')),
+                ('dataset_id', (data_info or {}).get('dataset_id')),
+            ]
+
+            present_cols = [f'"{c}"' for c, v in cols if v is not None]
+            present_vals = [v for c, v in cols if v is not None]
+            try:
+                if present_cols:
+                    placeholders = ', '.join(['%s'] * len(present_vals))
+                    columns_sql = ', '.join(present_cols)
+                    insert_query_dynamic = f'INSERT INTO "modelsDeepLearning" ({columns_sql}) VALUES ({placeholders}) ON CONFLICT DO NOTHING'
+                    self.cursor.execute(insert_query_dynamic, present_vals)
+                    self.connection.commit()
+                    return
+            except Exception:
+                try:
+                    self.connection.rollback()
+                except Exception:
+                    pass
+
+            # Ancienne tentative: avec idShare et colonnes JSONB
             insert_query_json = '''
                 INSERT INTO "modelsDeepLearning" ("id", "idShare", "model", "trainScore", "testScore", "date", "history", "hps", "data_info")
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT DO NOTHING
             '''
-            history_json = json.dumps(history) if history is not None else None
-            hps_json = json.dumps(hps) if hps is not None else None
-            data_info_json = json.dumps(data_info) if data_info is not None else None
             try:
                 self.cursor.execute(
                     insert_query_json,
@@ -887,12 +982,13 @@ class SqlCom:
                 )
                 self.connection.commit()
                 return
-            except Exception as e_json:
-                # Si l'erreur est due à des colonnes manquantes, on retombe sur l'insert minimal
-                # (UndefinedColumn ou colonne JSONB absente)
-                self.connection.rollback()
+            except Exception:
+                try:
+                    self.connection.rollback()
+                except Exception:
+                    pass
 
-            # Fallback: insertion minimale (schéma ancien)
+            # Fallback minimal: ancien schéma sans JSONB
             insert_query_min = '''
                 INSERT INTO "modelsDeepLearning" ("id", "idShare", "model", "trainScore", "testScore", "date")
                 VALUES (%s, %s, %s, %s, %s, %s)
@@ -904,24 +1000,46 @@ class SqlCom:
             )
             self.connection.commit()
         except (Exception) as error:
-            print(f"Error while updating model: {modelName} pour {shareObj.symbol}: ", error)
+            print(f"Error while updating model: {modelName} pour {getattr(shareObj, 'symbol', '?')}: ", error)
             exit(-1)
 
-    def listModelsForShare(self, shareObj):
-        """Liste les modèles DL pour une action donnée (id, date, scores)."""
+    def listModelsBySymbol(self, symbol: str):
+        """Liste les modèles contenant le symbole dans la colonne JSONB `symbols` (ou data_info.symbols),
+        avec fallback sur l'ancien schéma basé sur idShare si nécessaire."""
         try:
-            select_query = '''
+            select_query_jsonb = '''
                 SELECT "id", "date", COALESCE("trainScore", NULL) AS trainScore, COALESCE("testScore", NULL) AS testScore
                 FROM "modelsDeepLearning"
-                WHERE "idShare" = %s
+                WHERE (COALESCE("symbols", '[]'::jsonb) @> %s::jsonb)
+                   OR (COALESCE("data_info", '{}'::jsonb)->'symbols' @> %s::jsonb)
                 ORDER BY "date" DESC
             '''
-            self.cursor.execute(select_query, (int(shareObj.idShare),))
-            rows = self.cursor.fetchall()
-            return rows
-        except(Exception) as error:
-            print (f"Error while listing models for share {shareObj.symbol}: ", error)
-            return []
+            sym_arr = json.dumps([symbol])
+            self.cursor.execute(select_query_jsonb, (sym_arr, sym_arr))
+            return self.cursor.fetchall()
+        except Exception:
+            try:
+                self.connection.rollback()
+            except Exception:
+                pass
+            # Fallback: retrouver idShare puis filtrer par idShare
+            try:
+                self.cursor.execute('SELECT "idShare" FROM "sharesInfos" WHERE "symbol" = %s LIMIT 1', (symbol,))
+                row = self.cursor.fetchone()
+                if not row:
+                    return []
+                id_share_val = int(row[0])
+                select_query_old = '''
+                    SELECT "id", "date", COALESCE("trainScore", NULL) AS trainScore, COALESCE("testScore", NULL) AS testScore
+                    FROM "modelsDeepLearning"
+                    WHERE "idShare" = %s
+                    ORDER BY "date" DESC
+                '''
+                self.cursor.execute(select_query_old, (id_share_val,))
+                return self.cursor.fetchall()
+            except Exception as error:
+                print (f"Error while listing models for symbol {symbol}: ", error)
+                return []
 
     def getModelBinary(self, model_id):
         """Récupère le binaire d'un modèle par son identifiant (id)."""
@@ -937,17 +1055,20 @@ class SqlCom:
             return None
 
     def getModelMetadata(self, model_id):
-        """Retourne les métadonnées d'un modèle (scores, date, history, hps, data_info, idShare).
+        """Retourne les métadonnées d'un modèle (scores, date, history, hps, data_info, symbols).
 
-        Garde-­fou: si les colonnes JSON n'existent pas encore, retourne des champs None.
+        Fallback automatique si certaines colonnes JSON n'existent pas encore.
         """
         try:
-            # Tenter de lire toutes les colonnes (y compris JSONB)
+            # Version moderne: inclut `symbols`
             select_query = '''
-                SELECT "idShare", "trainScore", "testScore", "date",
+                SELECT COALESCE("trainScore", NULL) AS trainScore,
+                       COALESCE("testScore", NULL) AS testScore,
+                       "date",
                        COALESCE("history", NULL) AS history,
                        COALESCE("hps", NULL) AS hps,
-                       COALESCE("data_info", NULL) AS data_info
+                       COALESCE("data_info", NULL) AS data_info,
+                       COALESCE("symbols", NULL) AS symbols
                 FROM "modelsDeepLearning"
                 WHERE "id" = %s
                 LIMIT 1
@@ -956,8 +1077,7 @@ class SqlCom:
             row = self.cursor.fetchone()
             if not row:
                 return {}
-            id_share, train_score, test_score, date_val, history_val, hps_val, data_info_val = row
-            # Convertir JSONB -> dict si nécessaire (psycopg2 peut renvoyer déjà dict selon config)
+            train_score, test_score, date_val, history_val, hps_val, data_info_val, symbols_val = row
             def _json_load(v):
                 if v is None:
                     return None
@@ -968,23 +1088,23 @@ class SqlCom:
                 except Exception:
                     return None
             return {
-                'idShare': int(id_share) if id_share is not None else None,
                 'trainScore': float(train_score) if train_score is not None else None,
                 'testScore': float(test_score) if test_score is not None else None,
                 'date': date_val,
                 'history': _json_load(history_val),
                 'hps': _json_load(hps_val),
                 'data_info': _json_load(data_info_val),
+                'symbols': _json_load(symbols_val),
             }
-        except Exception as e:
-            # Fallback si colonnes JSON absentes
+        except Exception:
+            # Fallback: ancien schéma sans `symbols` et potentiellement sans JSONB
             try:
                 self.connection.rollback()
             except Exception:
                 pass
             try:
                 select_query_min = '''
-                    SELECT "idShare", "trainScore", "testScore", "date"
+                    SELECT "trainScore", "testScore", "date"
                     FROM "modelsDeepLearning"
                     WHERE "id" = %s
                     LIMIT 1
@@ -993,15 +1113,15 @@ class SqlCom:
                 row = self.cursor.fetchone()
                 if not row:
                     return {}
-                id_share, train_score, test_score, date_val = row
+                train_score, test_score, date_val = row
                 return {
-                    'idShare': int(id_share) if id_share is not None else None,
                     'trainScore': float(train_score) if train_score is not None else None,
                     'testScore': float(test_score) if test_score is not None else None,
                     'date': date_val,
                     'history': None,
                     'hps': None,
                     'data_info': None,
+                    'symbols': None,
                 }
             except Exception:
                 return {}

@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.graph_objs as go
 from datetime import datetime, timedelta
 import numpy as np
-from web.components.navigation import create_navigation  # Importer le composant de navigation
+from web.components.navigation import create_navigation, create_page_help  # Importer le composant d'aide
 
 def load_transaction_data():
     try:
@@ -98,7 +98,35 @@ def create_pnl_graph(df):
 df = load_transaction_data()
 current_holdings, period_results = calculate_portfolio_metrics(df)
 
+help_text = """
+### Dashboard (Tableau de Bord)
+
+Cette page est votre centre de contrôle pour suivre la santé financière de votre portefeuille en un coup d'œil.
+
+#### 1. Valeur Totale
+Le gros chiffre en haut indique la valeur actuelle de toutes vos positions ouvertes, basées sur leur coût d'achat initial. C'est votre engagement total sur le marché.
+
+#### 2. Indicateurs de Performance (P&L)
+Ces blocs colorés vous montrent combien vous avez gagné ou perdu sur différentes périodes :
+*   **Day** : Performance des dernières 24h.
+*   **Week** : Performance sur les 7 derniers jours.
+*   **Month** : Performance sur les 30 derniers jours.
+*   **All Time** : Performance globale depuis le tout début.
+
+*Pour chaque période :*
+*   **Gains (Vert)** : Argent encaissé grâce aux ventes.
+*   **Pertes (Rouge)** : Argent sorti pour les achats.
+*   **Net** : Le résultat final (Gains - Pertes). Si c'est vert, vous êtes rentable sur la période !
+
+#### 3. Évolution des Gains/Pertes
+Ce graphique trace votre courbe de profitabilité cumulée.
+*   Une courbe qui monte régulièrement vers la droite est signe d'une stratégie saine.
+*   Les pics vers le bas indiquent des périodes d'investissement (achat).
+*   Les pics vers le haut indiquent des prises de profits (vente).
+"""
+
 layout = html.Div([
+    create_page_help("Aide Dashboard", help_text),
     html.H3('Dashboard', style={'color': 'white', 'textAlign': 'center'}),
     
     # Portfolio Value Section
