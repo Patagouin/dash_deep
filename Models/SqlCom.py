@@ -928,6 +928,20 @@ class SqlCom:
                 ('transformer_num_heads', (hps or {}).get('transformer_num_heads')),
                 ('transformer_dropout', (hps or {}).get('transformer_dropout')),
                 ('transformer_ff_multiplier', (hps or {}).get('transformer_ff_multiplier')),
+                # Nouvelles colonnes Transformer/Hybride
+                ('model_type', (hps or {}).get('model_type')),
+                ('transformer_embed_dim', (hps or {}).get('transformer_embed_dim') or (hps or {}).get('embed_dim')),
+                ('transformer_num_layers', (hps or {}).get('transformer_num_layers') or (hps or {}).get('num_layers')),
+                ('hybrid_lstm_units', (hps or {}).get('hybrid_lstm_units') or (hps or {}).get('lstm_units')),
+                ('hybrid_lstm_layers', (hps or {}).get('hybrid_lstm_layers') or (hps or {}).get('lstm_layers')),
+                ('hybrid_fusion_mode', (hps or {}).get('hybrid_fusion_mode') or (hps or {}).get('fusion_mode')),
+                # Modèles pré-entraînés
+                ('is_pretrained', meta.get('is_pretrained')),
+                ('pretrained_name', meta.get('pretrained_name')),
+                ('pretrained_source_url', meta.get('pretrained_source_url')),
+                # Backtest avec spread
+                ('backtest_spread_pct', (data_info or {}).get('backtest_spread_pct')),
+                ('backtest_with_spread', (data_info or {}).get('backtest_with_spread')),
                 # Data détaillées
                 ('features', json.dumps((data_info or {}).get('features')) if (data_info or {}).get('features') is not None else None),
                 ('return_type', (data_info or {}).get('return_type')),
@@ -1041,6 +1055,77 @@ class SqlCom:
                 print (f"Error while listing models for symbol {symbol}: ", error)
                 return []
 
+    def listModelsByType(self, model_type: str = None):
+        """Liste les modèles par type (lstm, transformer, hybrid).
+        
+        Si model_type est None, retourne tous les modèles.
+        Retourne: liste de tuples (id, date, trainScore, testScore, model_type, symbols)
+        """
+        try:
+            if model_type:
+                select_query = '''
+                    SELECT "id", "date", 
+                           COALESCE("trainScore", NULL) AS trainScore, 
+                           COALESCE("testScore", NULL) AS testScore,
+                           COALESCE("model_type", 'lstm') AS model_type,
+                           COALESCE("symbols", '[]'::jsonb) AS symbols
+                    FROM "modelsDeepLearning"
+                    WHERE COALESCE("model_type", 'lstm') = %s
+                    ORDER BY "date" DESC
+                '''
+                self.cursor.execute(select_query, (model_type,))
+            else:
+                select_query = '''
+                    SELECT "id", "date", 
+                           COALESCE("trainScore", NULL) AS trainScore, 
+                           COALESCE("testScore", NULL) AS testScore,
+                           COALESCE("model_type", 'lstm') AS model_type,
+                           COALESCE("symbols", '[]'::jsonb) AS symbols
+                    FROM "modelsDeepLearning"
+                    ORDER BY "date" DESC
+                '''
+                self.cursor.execute(select_query)
+            return self.cursor.fetchall()
+        except Exception as error:
+            print(f"Error while listing models by type: ", error)
+            try:
+                self.connection.rollback()
+            except Exception:
+                pass
+            # Fallback sans la colonne model_type
+            try:
+                select_query = '''
+                    SELECT "id", "date", 
+                           COALESCE("trainScore", NULL) AS trainScore, 
+                           COALESCE("testScore", NULL) AS testScore,
+                           'lstm' AS model_type
+                    FROM "modelsDeepLearning"
+                    ORDER BY "date" DESC
+                '''
+                self.cursor.execute(select_query)
+                return [(r[0], r[1], r[2], r[3], r[4], None) for r in self.cursor.fetchall()]
+            except Exception:
+                return []
+
+    def listPretrainedModels(self):
+        """Liste uniquement les modèles pré-entraînés téléchargés."""
+        try:
+            select_query = '''
+                SELECT "id", "date", 
+                       COALESCE("trainScore", NULL) AS trainScore, 
+                       COALESCE("testScore", NULL) AS testScore,
+                       COALESCE("model_type", 'lstm') AS model_type,
+                       "pretrained_name", "pretrained_source_url"
+                FROM "modelsDeepLearning"
+                WHERE "is_pretrained" = TRUE
+                ORDER BY "date" DESC
+            '''
+            self.cursor.execute(select_query)
+            return self.cursor.fetchall()
+        except Exception as error:
+            print(f"Error while listing pretrained models: ", error)
+            return []
+
     def getModelBinary(self, model_id):
         """Récupère le binaire d'un modèle par son identifiant (id)."""
         try:
@@ -1087,7 +1172,7 @@ class SqlCom:
                     return json.loads(v)
                 except Exception:
                     return None
-            return {
+            result = {
                 'trainScore': float(train_score) if train_score is not None else None,
                 'testScore': float(test_score) if test_score is not None else None,
                 'date': date_val,
@@ -1096,6 +1181,32 @@ class SqlCom:
                 'data_info': _json_load(data_info_val),
                 'symbols': _json_load(symbols_val),
             }
+            # Récupérer les champs Transformer/Hybride supplémentaires si disponibles
+            try:
+                self.cursor.execute('''
+                    SELECT COALESCE("model_type", 'lstm') as model_type,
+                           "transformer_embed_dim", "transformer_num_heads", "transformer_num_layers",
+                           "transformer_ff_multiplier", "transformer_dropout",
+                           "hybrid_lstm_units", "hybrid_lstm_layers", "hybrid_fusion_mode",
+                           "is_pretrained", "pretrained_name"
+                    FROM "modelsDeepLearning" WHERE "id" = %s LIMIT 1
+                ''', (str(model_id),))
+                extra_row = self.cursor.fetchone()
+                if extra_row:
+                    result['model_type'] = extra_row[0] or 'lstm'
+                    result['transformer_embed_dim'] = extra_row[1]
+                    result['transformer_num_heads'] = extra_row[2]
+                    result['transformer_num_layers'] = extra_row[3]
+                    result['transformer_ff_multiplier'] = extra_row[4]
+                    result['transformer_dropout'] = float(extra_row[5]) if extra_row[5] else None
+                    result['hybrid_lstm_units'] = extra_row[6]
+                    result['hybrid_lstm_layers'] = extra_row[7]
+                    result['hybrid_fusion_mode'] = extra_row[8]
+                    result['is_pretrained'] = extra_row[9] or False
+                    result['pretrained_name'] = extra_row[10]
+            except Exception:
+                result['model_type'] = 'lstm'
+            return result
         except Exception:
             # Fallback: ancien schéma sans `symbols` et potentiellement sans JSONB
             try:

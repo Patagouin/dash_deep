@@ -1,6 +1,21 @@
 from dash import dcc, html
 from app import shM  # Import shM from app.py
 
+# Import de la configuration centralisée des modèles
+from web.apps.model_config import (
+    get_model_type_options,
+    get_fusion_mode_options,
+    MODEL_TYPES,
+    TOOLTIPS,
+    DEFAULT_DROPOUT,
+    DEFAULT_FUSION_MODE,
+    DEFAULT_HYBRID_LSTM_UNITS,
+    DEFAULT_HYBRID_LSTM_LAYERS,
+    DEFAULT_HYBRID_EMBED_DIM,
+    DEFAULT_HYBRID_NUM_HEADS,
+    DEFAULT_HYBRID_TRANS_LAYERS,
+)
+
 def get_parameters_layout():
     return html.Div([
         dcc.Interval(id='config_bootstrap', interval=200, n_intervals=0, max_intervals=1),
@@ -473,17 +488,13 @@ def get_parameters_layout():
                 ], style={'display': 'grid','gridTemplateColumns': 'repeat(auto-fit, minmax(200px, 1fr))','gap': '8px'})
             ], open=False, style={'backgroundColor': '#1E1E1E', 'padding': '10px', 'borderRadius': '8px', 'marginTop': '8px'}),
 
-            # Type de Modèle
+            # Type de Modèle (avec icônes)
             html.Div([
-                html.Label('Type de Modèle', style={'paddingLeft': '10px'}),
+                html.Label('Type de Modèle', style={'paddingLeft': '10px'}, title=TOOLTIPS['model_type']),
                 html.Div([
                     dcc.Dropdown(
                         id='model_type',
-                        options=[
-                            {'label': 'LSTM', 'value': 'lstm'},
-                            {'label': 'GRU', 'value': 'gru'},
-                            {'label': 'Transformer', 'value': 'transformer'}
-                        ],
+                        options=get_model_type_options(include_gru=True, include_hybrid=True),
                         value='lstm',
                         placeholder="Sélectionner l'architecture",
                         style={'width': '100%', 'color': '#FF8C00'},
@@ -501,6 +512,162 @@ def get_parameters_layout():
                     persistence=True, persistence_type='session'
                 )
             ], style={'marginBottom': '0','backgroundColor': 'transparent','padding': '0','borderRadius': '0'}),
+
+            # Paramètres Hybride LSTM+Transformer (collapsable)
+            html.Details([
+                html.Summary(f"{MODEL_TYPES['hybrid']['icon']} Paramètres Hybride LSTM+Transformer", style={'cursor': 'pointer', 'color': MODEL_TYPES['hybrid']['color']}),
+                html.Div([
+                    # LSTM units pour Hybride
+                    html.Div([
+                        html.Label('LSTM Units (Hybride)', style={'paddingLeft': '10px'}, title=TOOLTIPS['lstm_units']),
+                        html.Div([
+                            dcc.Dropdown(
+                                id='hybrid_lstm_units',
+                                options=[{'label': str(i), 'value': i} for i in [16, 32, 64, 128]],
+                                value=DEFAULT_HYBRID_LSTM_UNITS,
+                                placeholder='Unités LSTM',
+                                style={'width': '100%', 'color': '#FF8C00'},
+                                persistence=True, persistence_type='session'
+                            ),
+                            html.Button('+', id='add_hybrid_lstm_units', n_clicks=0, style={'marginLeft': '10px'})
+                        ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
+                        dcc.Dropdown(
+                            id='hybrid_lstm_units_saved',
+                            options=[],
+                            value=[],
+                            multi=True,
+                            placeholder='Options disponibles (fichier)',
+                            style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
+                            persistence=True, persistence_type='session'
+                        )
+                    ], style={'flex': '0 1 200px', 'minWidth': '180px'}),
+
+                    # LSTM layers pour Hybride
+                    html.Div([
+                        html.Label('LSTM Layers (Hybride)', style={'paddingLeft': '10px'}, title=TOOLTIPS['lstm_layers']),
+                        html.Div([
+                            dcc.Dropdown(
+                                id='hybrid_lstm_layers',
+                                options=[{'label': str(i), 'value': i} for i in range(1, 4)],
+                                value=DEFAULT_HYBRID_LSTM_LAYERS,
+                                placeholder='Couches LSTM',
+                                style={'width': '100%', 'color': '#FF8C00'},
+                                persistence=True, persistence_type='session'
+                            ),
+                            html.Button('+', id='add_hybrid_lstm_layers', n_clicks=0, style={'marginLeft': '10px'})
+                        ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
+                        dcc.Dropdown(
+                            id='hybrid_lstm_layers_saved',
+                            options=[],
+                            value=[],
+                            multi=True,
+                            placeholder='Options disponibles (fichier)',
+                            style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
+                            persistence=True, persistence_type='session'
+                        )
+                    ], style={'flex': '0 1 200px', 'minWidth': '180px'}),
+
+                    # Embed dim pour Hybride
+                    html.Div([
+                        html.Label('Embed Dim (Hybride)', style={'paddingLeft': '10px'}, title=TOOLTIPS['embed_dim']),
+                        html.Div([
+                            dcc.Dropdown(
+                                id='hybrid_embed_dim',
+                                options=[{'label': str(i), 'value': i} for i in [32, 64, 128]],
+                                value=DEFAULT_HYBRID_EMBED_DIM,
+                                placeholder='Dimension embedding',
+                                style={'width': '100%', 'color': '#FF8C00'},
+                                persistence=True, persistence_type='session'
+                            ),
+                            html.Button('+', id='add_hybrid_embed_dim', n_clicks=0, style={'marginLeft': '10px'})
+                        ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
+                        dcc.Dropdown(
+                            id='hybrid_embed_dim_saved',
+                            options=[],
+                            value=[],
+                            multi=True,
+                            placeholder='Options disponibles (fichier)',
+                            style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
+                            persistence=True, persistence_type='session'
+                        )
+                    ], style={'flex': '0 1 200px', 'minWidth': '180px'}),
+
+                    # Transformer heads pour Hybride
+                    html.Div([
+                        html.Label('Trans. Heads (Hybride)', style={'paddingLeft': '10px'}, title=TOOLTIPS['num_heads']),
+                        html.Div([
+                            dcc.Dropdown(
+                                id='hybrid_num_heads',
+                                options=[{'label': str(h), 'value': h} for h in [2, 4, 8]],
+                                value=DEFAULT_HYBRID_NUM_HEADS,
+                                placeholder='Têtes attention',
+                                style={'width': '100%', 'color': '#FF8C00'},
+                                persistence=True, persistence_type='session'
+                            ),
+                            html.Button('+', id='add_hybrid_num_heads', n_clicks=0, style={'marginLeft': '10px'})
+                        ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
+                        dcc.Dropdown(
+                            id='hybrid_num_heads_saved',
+                            options=[],
+                            value=[],
+                            multi=True,
+                            placeholder='Options disponibles (fichier)',
+                            style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
+                            persistence=True, persistence_type='session'
+                        )
+                    ], style={'flex': '0 1 200px', 'minWidth': '180px'}),
+
+                    # Transformer layers pour Hybride
+                    html.Div([
+                        html.Label('Trans. Layers (Hybride)', style={'paddingLeft': '10px'}, title=TOOLTIPS['transformer_layers']),
+                        html.Div([
+                            dcc.Dropdown(
+                                id='hybrid_trans_layers',
+                                options=[{'label': str(i), 'value': i} for i in range(1, 5)],
+                                value=DEFAULT_HYBRID_TRANS_LAYERS,
+                                placeholder='Couches Transformer',
+                                style={'width': '100%', 'color': '#FF8C00'},
+                                persistence=True, persistence_type='session'
+                            ),
+                            html.Button('+', id='add_hybrid_trans_layers', n_clicks=0, style={'marginLeft': '10px'})
+                        ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
+                        dcc.Dropdown(
+                            id='hybrid_trans_layers_saved',
+                            options=[],
+                            value=[],
+                            multi=True,
+                            placeholder='Options disponibles (fichier)',
+                            style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
+                            persistence=True, persistence_type='session'
+                        )
+                    ], style={'flex': '0 1 200px', 'minWidth': '180px'}),
+
+                    # Mode de fusion pour Hybride
+                    html.Div([
+                        html.Label('Mode de Fusion', style={'paddingLeft': '10px'}, title=TOOLTIPS['fusion_mode']),
+                        html.Div([
+                            dcc.Dropdown(
+                                id='hybrid_fusion_mode',
+                                options=get_fusion_mode_options(),
+                                value=DEFAULT_FUSION_MODE,
+                                placeholder='Mode de fusion',
+                                style={'width': '100%', 'color': '#FF8C00'},
+                                persistence=True, persistence_type='session'
+                            ),
+                            html.Button('+', id='add_hybrid_fusion_mode', n_clicks=0, style={'marginLeft': '10px'})
+                        ], style={'display': 'grid','gridTemplateColumns': 'minmax(0, 1fr) auto','alignItems': 'center','gap': '10px'}),
+                        dcc.Dropdown(
+                            id='hybrid_fusion_mode_saved',
+                            options=[],
+                            value=[],
+                            multi=True,
+                            placeholder='Options disponibles (fichier)',
+                            style={'width': '100%', 'marginTop': '6px', 'color': '#FF8C00'},
+                            persistence=True, persistence_type='session'
+                        )
+                    ], style={'flex': '0 1 200px', 'minWidth': '180px'}),
+                ], style={'display': 'grid','gridTemplateColumns': 'repeat(auto-fit, minmax(180px, 1fr))','gap': '8px'})
+            ], id='hybrid_params_details', open=False, style={'backgroundColor': '#1E1E1E', 'padding': '10px', 'borderRadius': '8px', 'marginTop': '8px'}),
 
             
 

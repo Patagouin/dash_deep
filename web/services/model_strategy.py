@@ -47,12 +47,17 @@ def backtest_model_intraday(day_aligned_df: pd.DataFrame,
                             model,
                             initial_cash: float,
                             per_trade_amount: float,
-                            k_trades: int = 1):
+                            k_trades: int = 1,
+                            spread_pct: float = 0.0):
     """
     Backtest simple basé modèle:
     - Pour chaque jour, une fenêtre unique au début (après look_back)
     - Le modèle prédit nb_y rendements (yield) à différents offsets répartis sur la journée
     - On sélectionne les K meilleurs offsets positifs et on exécute BUY à t0 puis SELL à t0+offset
+    
+    Args:
+        spread_pct: Spread bid-ask en pourcentage (ex: 0.1 = 0.1%)
+                   Appliqué sur le prix d'achat (augmenté) et de vente (diminué)
     """
     t0_total = time.perf_counter()
     equity_curve_times = []
@@ -125,9 +130,14 @@ def backtest_model_intraday(day_aligned_df: pd.DataFrame,
         selected = order[:k]
         t0_ts = day_df.index[t0_i]
         if 'openPrice' in day_df.columns:
-            buy_price = float(day_df.iloc[t0_i]['openPrice'])
+            mid_buy_price = float(day_df.iloc[t0_i]['openPrice'])
         else:
-            buy_price = float(day_df.iloc[t0_i].select_dtypes(include=[np.number]).iloc[0])
+            mid_buy_price = float(day_df.iloc[t0_i].select_dtypes(include=[np.number]).iloc[0])
+        
+        # Appliquer le spread: prix d'achat = mid + half_spread (ask)
+        spread_factor = 1.0 + (spread_pct / 100.0 / 2.0)
+        buy_price = mid_buy_price * spread_factor
+        
         qty = int(per_trade_amount // max(1e-9, buy_price))
         if qty <= 0:
             continue
@@ -136,16 +146,24 @@ def backtest_model_intraday(day_aligned_df: pd.DataFrame,
             sell_i = min(t0_i + off, len(day_df) - 1)
             sell_ts = day_df.index[sell_i]
             if 'openPrice' in day_df.columns:
-                sell_price = float(day_df.iloc[sell_i]['openPrice'])
+                mid_sell_price = float(day_df.iloc[sell_i]['openPrice'])
             else:
-                sell_price = float(day_df.iloc[sell_i].select_dtypes(include=[np.number]).iloc[0])
+                mid_sell_price = float(day_df.iloc[sell_i].select_dtypes(include=[np.number]).iloc[0])
+            
+            # Appliquer le spread: prix de vente = mid - half_spread (bid)
+            sell_factor = 1.0 - (spread_pct / 100.0 / 2.0)
+            sell_price = mid_sell_price * sell_factor
+            
             pnl = float((sell_price - buy_price) * qty)
+            
             # Enregistrer l'ordre d'entrée (BUY)
             trades.append({
                 'time': str(t0_ts),
                 'action': 'BUY',
                 'qty': qty,
                 'price': buy_price,
+                'mid_price': mid_buy_price,
+                'spread_pct': spread_pct,
                 'entry_time': str(t0_ts),
                 'entry_price': buy_price,
                 'pnl': 0.0
@@ -155,6 +173,8 @@ def backtest_model_intraday(day_aligned_df: pd.DataFrame,
                 'action': 'SELL',
                 'qty': qty,
                 'price': sell_price,
+                'mid_price': mid_sell_price,
+                'spread_pct': spread_pct,
                 'entry_time': str(t0_ts),
                 'entry_price': buy_price,
                 'pnl': pnl
@@ -179,7 +199,8 @@ def backtest_model_intraday(day_aligned_df: pd.DataFrame,
             'num_days_total': int(len(days)),
             'num_days_used': int(len(day_infos)),
             'look_back': int(look_back),
-            'nb_y': int(nb_y)
+            'nb_y': int(nb_y),
+            'spread_pct': float(spread_pct)
         }
     }
 

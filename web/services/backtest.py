@@ -13,7 +13,8 @@ def backtest_lag_correlation(aligned_prices: pd.DataFrame,
                              signal_window_minutes: int = 30,
                              buy_start_time: str = None,
                              sell_end_time: str = None,
-                             direction: str = 'up'):
+                             direction: str = 'up',
+                             spread_pct: float = 0.0):
     import time
     t0 = time.perf_counter()
     price_A = aligned_prices[ref_symbol]
@@ -104,9 +105,13 @@ def backtest_lag_correlation(aligned_prices: pd.DataFrame,
                     must_exit = True
             if must_exit:
                 _te0 = time.perf_counter()
-                exit_price = pb
+                mid_exit_price = pb
+                # Calcul du spread pour la sortie
+                half_spread_mult = spread_pct / 100.0 / 2.0
+                
                 if qty > 0:
-                    # Close long
+                    # Close long: vendre au bid (mid - half_spread)
+                    exit_price = mid_exit_price * (1.0 - half_spread_mult)
                     exit_qty = qty
                     cash += exit_qty * exit_price
                     realized = (exit_price - entry_price) * exit_qty
@@ -116,12 +121,15 @@ def backtest_lag_correlation(aligned_prices: pd.DataFrame,
                         'side': 'long',
                         'qty': int(exit_qty),
                         'price': float(exit_price),
+                        'mid_price': float(mid_exit_price),
+                        'spread_pct': spread_pct,
                         'pnl': float(realized),
                         'entry_time': position_open_time,
                         'entry_price': float(entry_price)
                     })
                 else:
-                    # Close short
+                    # Close short: racheter à l'ask (mid + half_spread)
+                    exit_price = mid_exit_price * (1.0 + half_spread_mult)
                     exit_qty = -qty
                     cash -= exit_qty * exit_price
                     realized = (entry_price - exit_price) * exit_qty
@@ -131,6 +139,8 @@ def backtest_lag_correlation(aligned_prices: pd.DataFrame,
                         'side': 'short',
                         'qty': int(exit_qty),
                         'price': float(exit_price),
+                        'mid_price': float(mid_exit_price),
+                        'spread_pct': spread_pct,
                         'pnl': float(realized),
                         'entry_time': position_open_time,
                         'entry_price': float(entry_price)
@@ -155,9 +165,14 @@ def backtest_lag_correlation(aligned_prices: pd.DataFrame,
             elif direction == 'both':
                 want_long = signal_up
                 want_short = (not want_long) and signal_down
+            # Calcul du spread: half_spread pour ask/bid
+            half_spread_mult = spread_pct / 100.0 / 2.0
+            
             if want_long:
                 _tb0 = time.perf_counter()
-                price = pb
+                mid_price = pb
+                # Prix d'achat = prix mid + half_spread (ask)
+                price = mid_price * (1.0 + half_spread_mult)
                 buy_qty = int(np.floor(per_trade_amount / max(1e-12, price)))
                 if buy_qty > 0 and (cash >= buy_qty * price):
                     cash -= buy_qty * price
@@ -175,6 +190,8 @@ def backtest_lag_correlation(aligned_prices: pd.DataFrame,
                         'side': 'long',
                         'qty': int(buy_qty),
                         'price': float(price),
+                        'mid_price': float(mid_price),
+                        'spread_pct': spread_pct,
                         'ref_price_t0_lag': a_t0_lag,
                         'ref_price_t0': a_t0
                     })
@@ -182,8 +199,10 @@ def backtest_lag_correlation(aligned_prices: pd.DataFrame,
                 dt_entry += (time.perf_counter() - _tb0)
             elif want_short:
                 _tb0 = time.perf_counter()
-                price = pb
-                sell_qty = int(np.floor(per_trade_amount / max(1e-12, price)))
+                mid_price = pb
+                # Prix de vente à découvert = prix mid - half_spread (bid)
+                price = mid_price * (1.0 - half_spread_mult)
+                sell_qty = int(np.floor(per_trade_amount / max(1e-12, mid_price)))
                 if sell_qty > 0:
                     cash += sell_qty * price
                     qty = -sell_qty
@@ -199,6 +218,8 @@ def backtest_lag_correlation(aligned_prices: pd.DataFrame,
                         'side': 'short',
                         'qty': int(sell_qty),
                         'price': float(price),
+                        'mid_price': float(mid_price),
+                        'spread_pct': spread_pct,
                         'ref_price_t0_lag': a_t0_lag,
                         'ref_price_t0': a_t0
                     })
@@ -207,8 +228,12 @@ def backtest_lag_correlation(aligned_prices: pd.DataFrame,
 
     # Close at end if open
     if qty != 0:
-        last_price = price_B.iloc[-1]
+        mid_last_price = price_B.iloc[-1]
+        half_spread_mult = spread_pct / 100.0 / 2.0
+        
         if qty > 0:
+            # Close long: vendre au bid
+            last_price = mid_last_price * (1.0 - half_spread_mult)
             cash += qty * last_price
             realized = (last_price - entry_price) * qty
             trades.append({
@@ -217,11 +242,15 @@ def backtest_lag_correlation(aligned_prices: pd.DataFrame,
                 'side': 'long',
                 'qty': int(qty),
                 'price': float(last_price),
+                'mid_price': float(mid_last_price),
+                'spread_pct': spread_pct,
                 'pnl': float(realized),
                 'entry_time': position_open_time,
                 'entry_price': float(entry_price)
             })
         else:
+            # Close short: racheter à l'ask
+            last_price = mid_last_price * (1.0 + half_spread_mult)
             exit_qty = -qty
             cash -= exit_qty * last_price
             realized = (entry_price - last_price) * exit_qty
@@ -231,6 +260,8 @@ def backtest_lag_correlation(aligned_prices: pd.DataFrame,
                 'side': 'short',
                 'qty': int(exit_qty),
                 'price': float(last_price),
+                'mid_price': float(mid_last_price),
+                'spread_pct': spread_pct,
                 'pnl': float(realized),
                 'entry_time': position_open_time,
                 'entry_price': float(entry_price)
@@ -256,6 +287,7 @@ def backtest_lag_correlation(aligned_prices: pd.DataFrame,
             'points_iterated': int(points_iterated),
             'buys': int(buys),
             'sells': int(sells),
+            'spread_pct': float(spread_pct),
             'mtm_s': float(dt_mtm),
             'entry_logic_s': float(dt_entry),
             'exit_logic_s': float(dt_exit),
@@ -269,10 +301,14 @@ def backtest_time_window(aligned_prices: pd.DataFrame,
                          initial_cash: float,
                          per_trade_amount: float,
                          buy_start_time: str,
-                         sell_end_time: str):
+                         sell_end_time: str,
+                         spread_pct: float = 0.0):
     """
     Stratégie simple: acheter chaque jour à buy_start_time, vendre à sell_end_time.
     Si buy/sell exacts non présents, utiliser le dernier prix disponible avant/à l'heure.
+    
+    Args:
+        spread_pct: Spread bid-ask en pourcentage (ex: 0.1 = 0.1%)
     """
     import time
     t0 = time.perf_counter()
@@ -360,12 +396,22 @@ def backtest_time_window(aligned_prices: pd.DataFrame,
 
             # BUY au début de fenêtre si possible
             _tb0 = time.perf_counter()
-            p_buy = float(prices_window[0])
+            mid_p_buy = float(prices_window[0])
+            half_spread_mult = spread_pct / 100.0 / 2.0
+            # Prix d'achat = mid + half_spread (ask)
+            p_buy = mid_p_buy * (1.0 + half_spread_mult)
             buy_qty = int(np.floor(per_trade_amount / max(1e-12, p_buy)))
             if buy_qty > 0 and (cash >= buy_qty * p_buy):
                 cash -= buy_qty * p_buy
                 qty = buy_qty
-                trades.append({'time': window_times[0], 'action': 'BUY', 'qty': int(buy_qty), 'price': float(p_buy)})
+                trades.append({
+                    'time': window_times[0], 
+                    'action': 'BUY', 
+                    'qty': int(buy_qty), 
+                    'price': float(p_buy),
+                    'mid_price': float(mid_p_buy),
+                    'spread_pct': spread_pct
+                })
                 buys += 1
             dt_buy += (time.perf_counter() - _tb0)
 
@@ -380,20 +426,40 @@ def backtest_time_window(aligned_prices: pd.DataFrame,
             # SELL à la fin de fenêtre si position ouverte
             if qty > 0:
                 _ts0 = time.perf_counter()
-                p_sell = float(prices_window[-1])
+                mid_p_sell = float(prices_window[-1])
+                # Prix de vente = mid - half_spread (bid)
+                p_sell = mid_p_sell * (1.0 - half_spread_mult)
                 cash += qty * p_sell
                 realized = (p_sell - p_buy) * qty if trades and trades[-1]['action'] == 'BUY' else 0.0
-                trades.append({'time': window_times[-1], 'action': 'SELL', 'qty': int(qty), 'price': float(p_sell), 'pnl': float(realized)})
+                trades.append({
+                    'time': window_times[-1], 
+                    'action': 'SELL', 
+                    'qty': int(qty), 
+                    'price': float(p_sell),
+                    'mid_price': float(mid_p_sell),
+                    'spread_pct': spread_pct,
+                    'pnl': float(realized)
+                })
                 qty = 0
                 sells += 1
                 dt_sell += (time.perf_counter() - _ts0)
 
     # Close any open at last available price
     if qty > 0:
-        last_price = price.iloc[-1]
+        mid_last_price = price.iloc[-1]
+        half_spread_mult = spread_pct / 100.0 / 2.0
+        last_price = mid_last_price * (1.0 - half_spread_mult)
         cash += qty * last_price
         realized = (last_price - trades[-1]['price']) * qty if trades and trades[-1]['action'] == 'BUY' else 0.0
-        trades.append({'time': idx[-1], 'action': 'SELL', 'qty': int(qty), 'price': float(last_price), 'pnl': float(realized)})
+        trades.append({
+            'time': idx[-1], 
+            'action': 'SELL', 
+            'qty': int(qty), 
+            'price': float(last_price),
+            'mid_price': float(mid_last_price),
+            'spread_pct': spread_pct,
+            'pnl': float(realized)
+        })
         qty = 0
 
     t_loop_end = time.perf_counter()

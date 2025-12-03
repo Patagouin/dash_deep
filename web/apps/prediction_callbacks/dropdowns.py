@@ -132,19 +132,24 @@ def _add_value(saved_list, value):
         vals.append(value)
     return vals
 
-# -- Model type options management --
+# -- Model type options management (avec icônes) --
 @app.callback(Output('model_type_saved', 'options'), Output('model_type_saved', 'value'), Input('add_model_type', 'n_clicks'), State('model_type', 'value'), State('model_type_saved', 'value'), prevent_initial_call=True)
 def add_model_type(n, value, current_selected):
+    # Mapping avec icônes pour les types de modèles
+    mapping = {
+        'lstm': '🔄 LSTM',
+        'gru': '🔃 GRU',
+        'transformer': '🎯 Transformer',
+        'hybrid': '🔀 Hybride'
+    }
     if not n:
         conf = _load_conf()
         vals = conf.get('model_type_options', [])
-        mapping = {'lstm': 'LSTM', 'gru': 'GRU', 'transformer': 'Transformer'}
         return [{'label': mapping.get(v, v), 'value': v} for v in vals], vals
     conf = _load_conf()
     new_vals = _add_value(conf.get('model_type_options', []), value)
     conf['model_type_options'] = new_vals
     _save_conf(conf)
-    mapping = {'lstm': 'LSTM', 'gru': 'GRU', 'transformer': 'Transformer'}
     opts = [{'label': mapping.get(v, v), 'value': v} for v in new_vals]
     selected = list(current_selected or [])
     if value is not None and value not in selected:
@@ -425,4 +430,171 @@ def set_loss_options_by_category(category):
             {'label': 'Mean Absolute Error (MAE)', 'value': 'mae'},
             {'label': 'Huber Loss', 'value': 'huber_loss'}
         ]
+
+
+# ==============================================================================
+# Paramètres Hybride LSTM+Transformer
+# ==============================================================================
+
+@app.callback(
+    Output('hybrid_lstm_units_saved', 'options'),
+    Output('hybrid_lstm_units_saved', 'value'),
+    Input('add_hybrid_lstm_units', 'n_clicks'),
+    State('hybrid_lstm_units', 'value'),
+    State('hybrid_lstm_units_saved', 'value'),
+    prevent_initial_call=True
+)
+def add_hybrid_lstm_units(n, value, current_selected):
+    if not n:
+        conf = _load_conf()
+        vals = conf.get('hybrid_lstm_units_options', [])
+        return [{'label': str(v), 'value': v} for v in vals], vals
+    conf = _load_conf()
+    new_vals = _add_value(conf.get('hybrid_lstm_units_options', []), value)
+    conf['hybrid_lstm_units_options'] = new_vals
+    _save_conf(conf)
+    opts = [{'label': str(v), 'value': v} for v in new_vals]
+    selected = list(current_selected or [])
+    if value is not None and value not in selected:
+        selected.append(value)
+    return opts, selected
+
+
+@app.callback(
+    Output('hybrid_lstm_layers_saved', 'options'),
+    Output('hybrid_lstm_layers_saved', 'value'),
+    Input('add_hybrid_lstm_layers', 'n_clicks'),
+    State('hybrid_lstm_layers', 'value'),
+    State('hybrid_lstm_layers_saved', 'value'),
+    prevent_initial_call=True
+)
+def add_hybrid_lstm_layers(n, value, current_selected):
+    if not n:
+        conf = _load_conf()
+        vals = conf.get('hybrid_lstm_layers_options', [])
+        return [{'label': str(v), 'value': v} for v in vals], vals
+    conf = _load_conf()
+    new_vals = _add_value(conf.get('hybrid_lstm_layers_options', []), value)
+    conf['hybrid_lstm_layers_options'] = new_vals
+    _save_conf(conf)
+    opts = [{'label': str(v), 'value': v} for v in new_vals]
+    selected = list(current_selected or [])
+    if value is not None and value not in selected:
+        selected.append(value)
+    return opts, selected
+
+
+@app.callback(
+    Output('hybrid_embed_dim_saved', 'options'),
+    Output('hybrid_embed_dim_saved', 'value'),
+    Input('add_hybrid_embed_dim', 'n_clicks'),
+    State('hybrid_embed_dim', 'value'),
+    State('hybrid_embed_dim_saved', 'value'),
+    prevent_initial_call=True
+)
+def add_hybrid_embed_dim(n, value, current_selected):
+    if not n:
+        conf = _load_conf()
+        vals = conf.get('hybrid_embed_dim_options', [])
+        return [{'label': str(v), 'value': v} for v in vals], vals
+    conf = _load_conf()
+    new_vals = _add_value(conf.get('hybrid_embed_dim_options', []), value)
+    conf['hybrid_embed_dim_options'] = new_vals
+    _save_conf(conf)
+    opts = [{'label': str(v), 'value': v} for v in new_vals]
+    selected = list(current_selected or [])
+    if value is not None and value not in selected:
+        selected.append(value)
+    return opts, selected
+
+
+@app.callback(
+    Output('hybrid_num_heads_saved', 'options'),
+    Output('hybrid_num_heads_saved', 'value'),
+    Input('add_hybrid_num_heads', 'n_clicks'),
+    State('hybrid_num_heads', 'value'),
+    State('hybrid_num_heads_saved', 'value'),
+    prevent_initial_call=True
+)
+def add_hybrid_num_heads(n, value, current_selected):
+    if not n:
+        conf = _load_conf()
+        vals = conf.get('hybrid_num_heads_options', [])
+        return [{'label': str(v), 'value': v} for v in vals], vals
+    conf = _load_conf()
+    new_vals = _add_value(conf.get('hybrid_num_heads_options', []), value)
+    conf['hybrid_num_heads_options'] = new_vals
+    _save_conf(conf)
+    opts = [{'label': str(v), 'value': v} for v in new_vals]
+    selected = list(current_selected or [])
+    if value is not None and value not in selected:
+        selected.append(value)
+    return opts, selected
+
+
+@app.callback(
+    Output('hybrid_trans_layers_saved', 'options'),
+    Output('hybrid_trans_layers_saved', 'value'),
+    Input('add_hybrid_trans_layers', 'n_clicks'),
+    State('hybrid_trans_layers', 'value'),
+    State('hybrid_trans_layers_saved', 'value'),
+    prevent_initial_call=True
+)
+def add_hybrid_trans_layers(n, value, current_selected):
+    if not n:
+        conf = _load_conf()
+        vals = conf.get('hybrid_trans_layers_options', [])
+        return [{'label': str(v), 'value': v} for v in vals], vals
+    conf = _load_conf()
+    new_vals = _add_value(conf.get('hybrid_trans_layers_options', []), value)
+    conf['hybrid_trans_layers_options'] = new_vals
+    _save_conf(conf)
+    opts = [{'label': str(v), 'value': v} for v in new_vals]
+    selected = list(current_selected or [])
+    if value is not None and value not in selected:
+        selected.append(value)
+    return opts, selected
+
+
+@app.callback(
+    Output('hybrid_fusion_mode_saved', 'options'),
+    Output('hybrid_fusion_mode_saved', 'value'),
+    Input('add_hybrid_fusion_mode', 'n_clicks'),
+    State('hybrid_fusion_mode', 'value'),
+    State('hybrid_fusion_mode_saved', 'value'),
+    prevent_initial_call=True
+)
+def add_hybrid_fusion_mode(n, value, current_selected):
+    fusion_labels = {'concat': 'Concat', 'add': 'Add', 'attention': 'Attention'}
+    if not n:
+        conf = _load_conf()
+        vals = conf.get('hybrid_fusion_mode_options', [])
+        return [{'label': fusion_labels.get(v, v), 'value': v} for v in vals], vals
+    conf = _load_conf()
+    new_vals = _add_value(conf.get('hybrid_fusion_mode_options', []), value)
+    conf['hybrid_fusion_mode_options'] = new_vals
+    _save_conf(conf)
+    opts = [{'label': fusion_labels.get(v, v), 'value': v} for v in new_vals]
+    selected = list(current_selected or [])
+    if value is not None and value not in selected:
+        selected.append(value)
+    return opts, selected
+
+
+# ==============================================================================
+# Callback pour afficher/masquer les sections de paramètres selon le type de modèle
+# ==============================================================================
+
+@app.callback(
+    Output('hybrid_params_details', 'style'),
+    Input('model_type', 'value'),
+    prevent_initial_call=False
+)
+def toggle_hybrid_params_visibility(model_type):
+    """Affiche ou masque la section des paramètres Hybride selon le type de modèle sélectionné."""
+    base_style = {'backgroundColor': '#1E1E1E', 'padding': '10px', 'borderRadius': '8px', 'marginTop': '8px'}
+    if model_type == 'hybrid':
+        return base_style
+    else:
+        return {**base_style, 'display': 'none'}
 

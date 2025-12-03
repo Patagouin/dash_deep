@@ -214,17 +214,43 @@ class Shares:
         # avec fallback auto côté SqlCom sur l'ancien schéma basé sur idShare.
         return self.__sqlObj.listModelsBySymbol(symbol)
 
+    def list_models_by_type(self, model_type: str = None):
+        """Liste les modèles par type (lstm, transformer, hybrid).
+        
+        Args:
+            model_type: 'lstm', 'transformer', 'hybrid' ou None pour tous
+            
+        Returns:
+            Liste de tuples (id, date, trainScore, testScore, model_type, symbols)
+        """
+        return self.__sqlObj.listModelsByType(model_type)
+
+    def list_pretrained_models(self):
+        """Liste uniquement les modèles pré-entraînés."""
+        return self.__sqlObj.listPretrainedModels()
+
     def load_model_from_db(self, model_id):
-        """Charge un modèle Keras depuis la BDD (par id) et retourne l'objet modèle Keras."""
+        """Charge un modèle Keras depuis la BDD (par id) et retourne l'objet modèle Keras.
+        
+        Supporte les modèles LSTM, Transformer et Hybrides grâce aux custom_objects.
+        """
         import tempfile
         import tensorflow as tf
+        
+        # Importer les custom objects pour les modèles Transformer/Hybrid
+        try:
+            from Models.transformer import get_custom_objects
+            custom_objects = get_custom_objects()
+        except ImportError:
+            custom_objects = {}
+        
         model_bin = self.__sqlObj.getModelBinary(model_id)
         if not model_bin:
             raise ValueError(f"Modèle introuvable en BDD pour id={model_id}")
         with tempfile.NamedTemporaryFile(suffix='.keras', delete=True) as tmp:
             tmp.write(model_bin)
             tmp.flush()
-            model = tf.keras.models.load_model(tmp.name, compile=False)
+            model = tf.keras.models.load_model(tmp.name, custom_objects=custom_objects, compile=False)
         return model
 
     def get_model_metadata(self, model_id):
