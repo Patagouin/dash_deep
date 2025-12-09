@@ -1,9 +1,9 @@
 from dash import dcc, html
 from web.components.navigation import create_navigation, create_page_help
 
-# Import the new sections
-from web.apps.prediction_parameters import get_parameters_layout
-from web.apps.prediction_results import get_results_layout
+# Import the layout sections (in prediction_callbacks/)
+from web.apps.prediction_callbacks.parameters_layout import get_parameters_layout
+from web.apps.prediction_callbacks.results_layout import get_results_layout
 from web.apps.prediction_visualization import get_visualization_layout
 
 # Import the callbacks package to register all modularized callbacks

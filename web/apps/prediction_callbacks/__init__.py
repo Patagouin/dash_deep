@@ -7,18 +7,27 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
+# Callbacks
 from . import dropdowns
 from . import statistics
 from . import potentials
 from . import graph
 from . import training
 
+# Layout components
+from . import parameters_layout
+from . import results_layout
+
 __all__ = [
+    # Callbacks
     'dropdowns',
     'statistics',
     'potentials',
     'graph',
     'training',
+    # Layout components
+    'parameters_layout',
+    'results_layout',
 ]
 
 
