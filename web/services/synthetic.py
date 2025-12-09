@@ -29,7 +29,7 @@ def generate_synthetic_timeseries(
     *,
     market_open: str = '09:30',
     market_close: str = '16:00',
-    freq: str = 'T',
+    freq: str = 'min',
     base_price: float = 100.0,
     data_type: CurveType = 'random_walk',
     seed: Optional[int] = None,

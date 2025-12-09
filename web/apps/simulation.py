@@ -32,6 +32,24 @@ def _get_symbols_options():
         return []
 
 
+CARD_STYLE = {
+    'backgroundColor': '#1a1a24',
+    'padding': '24px',
+    'borderRadius': '16px',
+    'border': '1px solid rgba(148, 163, 184, 0.1)',
+    'boxShadow': '0 4px 6px -1px rgba(0, 0, 0, 0.4)',
+    'marginBottom': '24px'
+}
+
+SECTION_TITLE_STYLE = {
+    'fontSize': '0.8125rem',
+    'fontWeight': '500',
+    'color': '#94a3b8',
+    'textTransform': 'uppercase',
+    'letterSpacing': '0.05em',
+    'marginBottom': '8px'
+}
+
 def layout_content():
     today = pd.Timestamp.today().normalize()
     fifteen_days_ago = today - pd.Timedelta(days=15)
@@ -60,6 +78,7 @@ Cette page est dédiée au test de stratégies de trading sur des données histo
     *   Utilise un modèle entraîné dans la page "Prédiction".
     *   Le modèle analyse le marché minute par minute et décide d'acheter ou vendre.
     *   C'est le test ultime pour valider votre IA.
+    *   **Généralisation** : vous pouvez réutiliser un modèle sauvegardé sur d'autres fenêtres temporelles pour vérifier s'il généralise bien hors de sa période d'entraînement.
 
 #### Paramètres Généraux
 *   **Période** : Dates de début et fin du backtest.
@@ -75,297 +94,330 @@ Cette page est dédiée au test de stratégies de trading sur des données histo
 
     return html.Div([
         create_page_help("Aide Simulation", help_text),
-        html.H3('Simulation', style=
-        {
-            'color': '#FF8C00'
-        }
-        ),
+        
+        # En-tête de page
+        html.Div([
+            html.H3('Simulation', style={
+                'margin': '0',
+                'textAlign': 'center'
+            }),
+            html.P('Backtesting & Test de Stratégies', style={
+                'textAlign': 'center',
+                'color': '#94a3b8',
+                'marginTop': '8px',
+                'marginBottom': '0'
+            })
+        ], style={'marginBottom': '32px'}),
 
         # Store persistant (session) pour conserver les résultats de simulation
         dcc.Store(id='sim_results_store', storage_type='session'),
 
+        # Section des modes de simulation
         html.Div([
+            html.Div([
+                html.Span('🎯', style={'fontSize': '1.25rem'}),
+                html.Span('Mode de Simulation', style={
+                    'fontSize': '1.125rem',
+                    'fontWeight': '600',
+                    'color': '#a78bfa',
+                    'marginLeft': '10px'
+                })
+            ], style={'marginBottom': '16px', 'display': 'flex', 'alignItems': 'center'}),
+            
             dcc.Tabs(id='sim_tabs', value='leadlag', children=[
-                dcc.Tab(label='Lead-lag (2 actions)', value='leadlag'),
-                dcc.Tab(label='Fenêtre horaire (1 action)', value='timewindow'),
-                dcc.Tab(label='Modèle (1 action)', value='model')
-            ])
-        ]),
+                dcc.Tab(label='📊 Lead-lag (2 actions)', value='leadlag'),
+                dcc.Tab(label='⏰ Fenêtre horaire (1 action)', value='timewindow'),
+                dcc.Tab(label='🤖 Modèle IA (1 action)', value='model')
+            ], className='custom-tabs')
+        ], style={**CARD_STYLE, 'marginBottom': '16px'}),
+        
+        # Section des paramètres
         html.Div([
             html.Div([
-                html.Label('Action référence (A)'),
-                dcc.Dropdown(
-                    id='sim_reference_symbol',
-                    options=_get_symbols_options(),
-                    placeholder='Choisir A (référence)',
-                    style=
-                    {
+                html.Span('⚙️', style={'fontSize': '1.25rem'}),
+                html.Span('Paramètres', style={
+                    'fontSize': '1.125rem',
+                    'fontWeight': '600',
+                    'color': '#a78bfa',
+                    'marginLeft': '10px'
+                })
+            ], style={'marginBottom': '20px', 'display': 'flex', 'alignItems': 'center'}),
+            
+            html.Div([
+                html.Div([
+                    html.Label('Action référence (A)', style=SECTION_TITLE_STYLE),
+                    dcc.Dropdown(
+                        id='sim_reference_symbol',
+                        options=_get_symbols_options(),
+                        placeholder='Choisir A (référence)',
+                        style={'width': '100%'},
+                        persistence=True, persistence_type='session'
+                    )
+                ]),
+                html.Div([
+                    html.Label('Action tradée (B)', style=SECTION_TITLE_STYLE),
+                    dcc.Dropdown(
+                        id='sim_trade_symbol',
+                        options=_get_symbols_options(),
+                        placeholder='Choisir B (achetée/vendue)',
+                        style={'width': '100%'},
+                        persistence=True, persistence_type='session'
+                    )
+                ], id='panel_trade_symbol'),
+                html.Div([
+                    html.Label('Modèle sauvegardé', style=SECTION_TITLE_STYLE),
+                    dcc.Dropdown(
+                        id='sim_saved_model',
+                        options=[],
+                        placeholder="Choisir un modèle pour l'action référence",
+                        style={'width': '100%'},
+                        persistence=True, persistence_type='session'
+                    )
+                ], id='panel_model', style={'display': 'none'}),
+                html.Div(id='sim_model_meta', style={
+                    'gridColumn': '1 / -1',
+                    'color': '#94a3b8',
+                    'backgroundColor': '#12121a',
+                    'padding': '12px',
+                    'borderRadius': '8px',
+                    'fontSize': '0.8125rem'
+                }),
+                html.Div([
+                    html.Label('Période', style=SECTION_TITLE_STYLE),
+                    dcc.DatePickerRange(
+                        id='sim_date_range',
+                        start_date=fifteen_days_ago,
+                        end_date=today,
+                        display_format='YYYY-MM-DD',
+                        persistence=True, persistence_type='session'
+                    )
+                ]),
+                html.Div([
+                    html.Label("Heure début d'achat", style=SECTION_TITLE_STYLE),
+                    dcc.Input(
+                        id='sim_buy_start_time',
+                        type='text',
+                        value='09:30',
+                        placeholder='HH:MM',
+                        style={'width': '100%'},
+                        persistence=True, persistence_type='session'
+                    )
+                ]),
+                html.Div([
+                    html.Label('Heure fin de vente', style=SECTION_TITLE_STYLE),
+                    dcc.Input(
+                        id='sim_sell_end_time',
+                        type='text',
+                        value='16:00',
+                        placeholder='HH:MM',
+                        style={'width': '100%'},
+                        persistence=True, persistence_type='session'
+                    )
+                ]),
+                html.Div([
+                    html.Label('Seuil hausse A sur 30 min (%)', style=SECTION_TITLE_STYLE),
+                    dcc.Input(
+                        id='sim_threshold_pct',
+                        type='number',
+                        value=0.1,
+                        step=0.05,
+                        min=0,
+                        max=10,
+                        style={'width': '100%'},
+                        persistence=True, persistence_type='session'
+                    ),
+                    html.Small("Ex: 0.1 = 0,1%", style={'color': '#64748b', 'fontSize': '0.75rem'})
+                ], id='panel_threshold'),
+                html.Div([
+                    html.Label('Sens du signal', style=SECTION_TITLE_STYLE),
+                    dcc.RadioItems(
+                        id='sim_direction',
+                        options=[
+                            {'label': ' ↑ Hausse', 'value': 'up'},
+                            {'label': ' ↓ Baisse', 'value': 'down'},
+                            {'label': ' ↕ Les deux', 'value': 'both'}
+                        ],
+                        value='up',
+                        inline=True,
+                        persistence=True, persistence_type='session',
+                        labelStyle={'marginRight': '16px', 'color': '#f8fafc'}
+                    )
+                ], id='panel_direction'),
+                html.Div([
+                    html.Label('Décalage (minutes)', style=SECTION_TITLE_STYLE),
+                    dcc.Input(
+                        id='sim_lag_minutes',
+                        type='number',
+                        value=30,
+                        step=1,
+                        min=1,
+                        max=240,
+                        style={'width': '100%'},
+                        persistence=True, persistence_type='session'
+                    )
+                ], id='panel_lag'),
+                html.Div([
+                    html.Label('Capital initial (€)', style=SECTION_TITLE_STYLE),
+                    dcc.Input(
+                        id='sim_initial_cash',
+                        type='number',
+                        value=10000,
+                        step=100,
+                        min=0,
+                        style={'width': '100%'},
+                        persistence=True, persistence_type='session'
+                    )
+                ]),
+                html.Div([
+                    html.Label('Montant par trade (€)', style=SECTION_TITLE_STYLE),
+                    dcc.Input(
+                        id='sim_trade_amount',
+                        type='number',
+                        value=1000,
+                        step=50,
+                        min=0,
+                        style={'width': '100%'},
+                        persistence=True, persistence_type='session'
+                    )
+                ]),
+                html.Div([
+                    html.Button('🚀 Lancer la simulation', id='sim_run', n_clicks=0, style={
                         'width': '100%',
-                        'color': '#FF8C00'
-                    },
-                    persistence=True, persistence_type='session'
-                )
-            ]),
-            html.Div([
-                html.Label('Action tradée (B)'),
-                dcc.Dropdown(
-                    id='sim_trade_symbol',
-                    options=_get_symbols_options(),
-                    placeholder='Choisir B (achetée/vendue)',
-                    style=
-                    {
-                        'width': '100%',
-                        'color': '#FF8C00'
-                    },
-                    persistence=True, persistence_type='session'
-                )
-            ], id='panel_trade_symbol'),
-            html.Div([
-                html.Label('Modèle sauvegardé'),
-                dcc.Dropdown(
-                    id='sim_saved_model',
-                    options=[],
-                    placeholder="Choisir un modèle pour l'action référence",
-                    style={'width': '100%', 'color': '#FF8C00'},
-                    persistence=True, persistence_type='session'
-                )
-            ], id='panel_model', style={'display': 'none'}),
-            html.Div(id='sim_model_meta', style={'gridColumn': '1 / -1', 'color': '#CCCCCC'}),
-            html.Div([
-                html.Label('Période'),
-                dcc.DatePickerRange(
-                    id='sim_date_range',
-                    start_date=fifteen_days_ago,
-                    end_date=today,
-                    display_format='YYYY-MM-DD',
-                    persistence=True, persistence_type='session'
-                )
-            ]),
-            html.Div([
-                html.Label("Heure début d'achat (HH:MM)"),
-                dcc.Input(
-                    id='sim_buy_start_time',
-                    type='text',
-                    value='09:30',
-                    placeholder='HH:MM',
-                    style=
-                    {
-                        'width': '100%'
-                    },
-                    persistence=True, persistence_type='session'
-                )
-            ]),
-            html.Div([
-                html.Label('Heure fin de vente (HH:MM)'),
-                dcc.Input(
-                    id='sim_sell_end_time',
-                    type='text',
-                    value='16:00',
-                    placeholder='HH:MM',
-                    style=
-                    {
-                        'width': '100%'
-                    },
-                    persistence=True, persistence_type='session'
-                )
-            ]),
-            html.Div([
-                html.Label('Seuil hausse A sur 30 min (%)'),
-                dcc.Input(
-                    id='sim_threshold_pct',
-                    type='number',
-                    value=0.1,
-                    step=0.05,
-                    min=0,
-                    max=10,
-                    style=
-                    {
-                        'width': '100%'
-                    },
-                    persistence=True, persistence_type='session'
-                ),
-                html.Small("Ex: 0.1 = 0,1%")
-            ], id='panel_threshold'),
-            html.Div([
-                html.Label('Sens du signal'),
-                dcc.RadioItems(
-                    id='sim_direction',
-                    options=[
-                        { 'label': 'Hausse', 'value': 'up' },
-                        { 'label': 'Baisse', 'value': 'down' },
-                        { 'label': 'Les deux', 'value': 'both' }
-                    ],
-                    value='up',
-                    inline=True,
-                    persistence=True, persistence_type='session'
-                )
-            ], id='panel_direction'),
-            html.Div([
-                html.Label('Décalage (minutes)'),
-                dcc.Input(
-                    id='sim_lag_minutes',
-                    type='number',
-                    value=30,
-                    step=1,
-                    min=1,
-                    max=240,
-                    style=
-                    {
-                        'width': '100%'
-                    },
-                    persistence=True, persistence_type='session'
-                )
-            ], id='panel_lag'),
-            html.Div([
-                html.Label('Capital initial (€)'),
-                dcc.Input(
-                    id='sim_initial_cash',
-                    type='number',
-                    value=10000,
-                    step=100,
-                    min=0,
-                    style=
-                    {
-                        'width': '100%'
-                    },
-                    persistence=True, persistence_type='session'
-                )
-            ]),
-            html.Div([
-                html.Label('Montant par trade (€)'),
-                dcc.Input(
-                    id='sim_trade_amount',
-                    type='number',
-                    value=1000,
-                    step=50,
-                    min=0,
-                    style=
-                    {
-                        'width': '100%'
-                    },
-                    persistence=True, persistence_type='session'
-                )
-            ]),
-            html.Div([
-                html.Button('Lancer la simulation', id='sim_run', n_clicks=0, style=
-                {
-                    'width': '100%',
-                    'backgroundColor': '#FF8C00',
-                    'color': 'black',
-                    'fontWeight': 'bold',
-                    'padding': '8px',
-                    'borderRadius': '6px',
-                    'border': 'none'
-                }
-                )
-            ])
-        ], style=
-        {
-            'display': 'grid',
-            'gridTemplateColumns': 'repeat(auto-fit, minmax(240px, 1fr))',
-            'gap': '10px',
-            'backgroundColor': '#2E2E2E',
-            'padding': '10px',
-            'borderRadius': '8px'
-        }
-        ),
+                        'background': 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)',
+                        'color': 'white',
+                        'fontWeight': '600',
+                        'fontFamily': 'Outfit, sans-serif',
+                        'padding': '14px',
+                        'borderRadius': '10px',
+                        'border': 'none',
+                        'fontSize': '1rem',
+                        'cursor': 'pointer',
+                        'boxShadow': '0 4px 15px rgba(99, 102, 241, 0.3)',
+                        'transition': 'all 0.25s ease'
+                    })
+                ], style={'gridColumn': '1 / -1'})
+            ], style={
+                'display': 'grid',
+                'gridTemplateColumns': 'repeat(auto-fit, minmax(240px, 1fr))',
+                'gap': '16px'
+            })
+        ], style=CARD_STYLE),
 
+        # Résultats de simulation
         html.Div([
             html.Div([
-                html.H5('Courbe de capital'),
-                dcc.Loading(dcc.Graph(id='simulation_equity_graph', style=
-                {
-                    'height': '45vh'
-                }
-                ), type='default')
-            ], style=
-            {
-                'backgroundColor': '#1E1E1E',
-                'padding': '10px',
-                'borderRadius': '8px'
-            }
-            ),
+                html.Span('📈', style={'fontSize': '1.25rem'}),
+                html.Span('Résultats', style={
+                    'fontSize': '1.125rem',
+                    'fontWeight': '600',
+                    'color': '#a78bfa',
+                    'marginLeft': '10px'
+                })
+            ], style={'marginBottom': '20px', 'display': 'flex', 'alignItems': 'center'}),
+            
             html.Div([
-                html.H5('Résumé'),
-                html.Div(id='simulation_summary', style=
-                {
-                    'color': '#FFFFFF'
-                }
-                )
-            ], style=
-            {
-                'backgroundColor': '#1E1E1E',
-                'padding': '10px',
-                'borderRadius': '8px'
-            }
-            )
-        ], style=
-        {
-            'display': 'grid',
-            'gridTemplateColumns': '1fr 1fr',
-            'gap': '10px',
-            'marginTop': '10px'
-        }
-        ),
+                # Courbe de capital
+                html.Div([
+                    html.H5('Courbe de capital', style={
+                        'color': '#f8fafc',
+                        'marginBottom': '12px'
+                    }),
+                    dcc.Loading(
+                        dcc.Graph(id='simulation_equity_graph', style={'height': '45vh'}),
+                        type='default'
+                    )
+                ], style={
+                    'backgroundColor': '#12121a',
+                    'padding': '16px',
+                    'borderRadius': '12px',
+                    'border': '1px solid rgba(148, 163, 184, 0.1)'
+                }),
+                
+                # Résumé
+                html.Div([
+                    html.H5('Résumé', style={
+                        'color': '#f8fafc',
+                        'marginBottom': '12px'
+                    }),
+                    html.Div(id='simulation_summary', style={'color': '#f8fafc'})
+                ], style={
+                    'backgroundColor': '#12121a',
+                    'padding': '16px',
+                    'borderRadius': '12px',
+                    'border': '1px solid rgba(148, 163, 184, 0.1)'
+                })
+            ], style={
+                'display': 'grid',
+                'gridTemplateColumns': '2fr 1fr',
+                'gap': '16px',
+                'marginBottom': '16px'
+            }),
+            
+            html.Div([
+                # Courbe journalière
+                html.Div([
+                    html.H5('Courbe de capital (journalier)', style={
+                        'color': '#f8fafc',
+                        'marginBottom': '12px'
+                    }),
+                    dcc.Loading(
+                        dcc.Graph(id='simulation_daily_equity_graph', style={'height': '45vh'}),
+                        type='default'
+                    )
+                ], style={
+                    'backgroundColor': '#12121a',
+                    'padding': '16px',
+                    'borderRadius': '12px',
+                    'border': '1px solid rgba(148, 163, 184, 0.1)'
+                }),
+                
+                # Résumé journalier
+                html.Div([
+                    html.H5('Résumé journalier', style={
+                        'color': '#f8fafc',
+                        'marginBottom': '12px'
+                    }),
+                    html.Div(id='simulation_daily_table', style={'color': '#f8fafc'})
+                ], style={
+                    'backgroundColor': '#12121a',
+                    'padding': '16px',
+                    'borderRadius': '12px',
+                    'border': '1px solid rgba(148, 163, 184, 0.1)'
+                })
+            ], style={
+                'display': 'grid',
+                'gridTemplateColumns': '2fr 1fr',
+                'gap': '16px',
+                'marginBottom': '16px'
+            }),
+            
+            # Transactions
+            html.Div([
+                html.H5('📋 Transactions', style={
+                    'color': '#f8fafc',
+                    'marginBottom': '12px'
+                }),
+                html.Div(id='simulation_trades_table')
+            ], style={
+                'backgroundColor': '#12121a',
+                'padding': '16px',
+                'borderRadius': '12px',
+                'border': '1px solid rgba(148, 163, 184, 0.1)'
+            })
+        ], style=CARD_STYLE),
 
-        html.Div([
-            html.Div([
-                html.H5('Courbe de capital (journalier)'),
-                dcc.Loading(dcc.Graph(id='simulation_daily_equity_graph', style=
-                {
-                    'height': '45vh'
-                }
-                ), type='default')
-            ], style=
-            {
-                'backgroundColor': '#1E1E1E',
-                'padding': '10px',
-                'borderRadius': '8px'
-            }
-            ),
-            html.Div([
-                html.H5('Résumé journalier'),
-                html.Div(id='simulation_daily_table', style=
-                {
-                    'color': '#FFFFFF'
-                }
-                )
-            ], style=
-            {
-                'backgroundColor': '#1E1E1E',
-                'padding': '10px',
-                'borderRadius': '8px'
-            }
-            )
-        ], style=
-        {
-            'display': 'grid',
-            'gridTemplateColumns': '1fr 1fr',
-            'gap': '10px',
-            'marginTop': '10px'
-        }
-        ),
-
-        html.Div([
-            html.H5('Transactions'),
-            html.Div(id='simulation_trades_table')
-        ], style=
-        {
-            'backgroundColor': '#1E1E1E',
-            'padding': '10px',
-            'borderRadius': '8px',
-            'marginTop': '10px'
-        }
-        ),
+        # Spacer pour navigation
+        html.Div(style={'height': '100px'}),
 
         create_navigation()
-    ], style=
-    {
-        'backgroundColor': 'black',
+    ], style={
+        'backgroundColor': '#0a0a0f',
         'minHeight': '100vh',
-        'padding': '20px'
-    }
-    )
+        'padding': '24px 32px',
+        'width': '100%',
+        'maxWidth': '100%',
+        'margin': '0'
+    })
 
 
 # Pour compatibilité avec index.py qui attend `layout`
@@ -886,3 +938,4 @@ def run_simulation(n_clicks, stored_data, sim_mode, ref_symbol, trade_symbol, st
         logging.exception('Erreur simulation')
         fig.update_layout(title=f"Erreur simulation: {e}")
         return fig, html.Div('Erreur lors de la simulation.'), html.Div(), fig_daily, html.Div(''), None
+

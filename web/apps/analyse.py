@@ -217,6 +217,31 @@ def compute_correlation_heatmap(selected_symbols, selected_sector, lag_value, st
         return placeholder
 
 
+CARD_STYLE = {
+    'backgroundColor': '#1a1a24',
+    'padding': '24px',
+    'borderRadius': '16px',
+    'border': '1px solid rgba(148, 163, 184, 0.1)',
+    'boxShadow': '0 4px 6px -1px rgba(0, 0, 0, 0.4)',
+    'marginBottom': '20px'
+}
+
+INNER_CARD_STYLE = {
+    'backgroundColor': '#12121a',
+    'padding': '16px',
+    'borderRadius': '12px',
+    'border': '1px solid rgba(148, 163, 184, 0.1)'
+}
+
+SECTION_TITLE_STYLE = {
+    'fontSize': '0.8125rem',
+    'fontWeight': '500',
+    'color': '#94a3b8',
+    'textTransform': 'uppercase',
+    'letterSpacing': '0.05em',
+    'marginBottom': '8px'
+}
+
 def layout_content():
     help_text = """
 ### Analyse de Données
@@ -248,136 +273,232 @@ Un outil puissant qui scanne **toutes** les paires d'actions possibles pour vous
 
     return html.Div([
         create_page_help("Aide Analyse", help_text),
-        html.H3('Analyse', style={'color': '#FF8C00'}),
+        
+        # En-tête de page
+        html.Div([
+            html.H3('Analyse', style={
+                'margin': '0',
+                'textAlign': 'center'
+            }),
+            html.P('Corrélations & Statistiques de Marché', style={
+                'textAlign': 'center',
+                'color': '#94a3b8',
+                'marginTop': '8px',
+                'marginBottom': '0'
+            })
+        ], style={'marginBottom': '32px'}),
+        
         # Stores persistants pour conserver les sorties calculées
         dcc.Store(id='analyse_heatmap_store', storage_type='session'),
         dcc.Store(id='analyse_tables_store', storage_type='session'),
 
-        # Filtres
+        # Section Filtres
         html.Div([
             html.Div([
-                html.Label('Secteur(s)'),
-                dcc.Dropdown(
-                    id='analyse_sector_dropdown',
-                    options=[
-                        {'label': sector, 'value': sector}
-                        for sector in sorted(shM.dfShares['sector'].fillna('Non défini').unique())
-                    ],
-                    multi=True,
-                    placeholder='Sélectionner un secteur',
-                    style={'width': '100%', 'color': '#FF8C00'},
-                    persistence=True, persistence_type='session'
-                )
-            ]),
+                html.Span('🔍', style={'fontSize': '1.25rem'}),
+                html.Span('Filtres', style={
+                    'fontSize': '1.125rem',
+                    'fontWeight': '600',
+                    'color': '#a78bfa',
+                    'marginLeft': '10px'
+                })
+            ], style={'marginBottom': '20px', 'display': 'flex', 'alignItems': 'center'}),
+            
             html.Div([
-                html.Label('Actions'),
-                dcc.Dropdown(
-                    id='analyse_shares_dropdown',
-                    options=[
-                        {'label': f'{row.symbol}', 'value': row.symbol}
-                        for row in shM.dfShares.sort_values(by='symbol').itertuples()
-                    ],
-                    multi=True,
-                    placeholder='Sélectionner des actions',
-                    style={'width': '100%', 'color': '#FF8C00'},
-                    persistence=True, persistence_type='session'
-                )
-            ])
-        ], style={'display': 'grid', 'gridTemplateColumns': 'repeat(auto-fit, minmax(260px, 1fr))', 'gap': '10px', 'backgroundColor': '#2E2E2E', 'padding': '10px', 'borderRadius': '8px'}),
-
-        # Périodes supprimées
-
-        # Tableaux et graphiques
-        html.Div([
-            html.Div([
-                html.H5('Corrélations multi-actifs (openPrice, 15 derniers jours)'),
                 html.Div([
-                    html.Div([
-                        html.H6('Décalage 0 min'),
-                        html.Div(id='analyse_corr_table_lag_0')
-                    ], style={'backgroundColor': '#1E1E1E', 'padding': '10px', 'borderRadius': '8px'}),
-                    html.Div([
-                        html.H6('Décalage 1 min'),
-                        html.Div(id='analyse_corr_table_lag_1')
-                    ], style={'backgroundColor': '#1E1E1E', 'padding': '10px', 'borderRadius': '8px'}),
-                    html.Div([
-                        html.H6('Décalage 3 min'),
-                        html.Div(id='analyse_corr_table_lag_3')
-                    ], style={'backgroundColor': '#1E1E1E', 'padding': '10px', 'borderRadius': '8px'}),
-                    html.Div([
-                        html.H6('Décalage 6 min'),
-                        html.Div(id='analyse_corr_table_lag_6')
-                    ], style={'backgroundColor': '#1E1E1E', 'padding': '10px', 'borderRadius': '8px'}),
-                    html.Div([
-                        html.H6('Décalage 10 min'),
-                        html.Div(id='analyse_corr_table_lag_10')
-                    ], style={'backgroundColor': '#1E1E1E', 'padding': '10px', 'borderRadius': '8px'})
-                ], style={'display': 'grid', 'gridTemplateColumns': 'repeat(auto-fit, minmax(280px, 1fr))', 'gap': '10px'})
-            ,
-                html.Div([
-                    html.H5('Heatmap de corrélation (rendements minute)'),
+                    html.Label('Secteur(s)', style=SECTION_TITLE_STYLE),
                     dcc.Dropdown(
-                        id='analyse_corr_heatmap_lag',
+                        id='analyse_sector_dropdown',
                         options=[
-                            {'label': 'Décalage 0 min', 'value': 0},
-                            {'label': 'Décalage 1 min', 'value': 1},
-                            {'label': 'Décalage 3 min', 'value': 3},
-                            {'label': 'Décalage 6 min', 'value': 6},
-                            {'label': 'Décalage 10 min', 'value': 10},
-                            {'label': 'Max (0–30 min)', 'value': 'max_0_30'},
+                            {'label': sector, 'value': sector}
+                            for sector in sorted(shM.dfShares['sector'].fillna('Non défini').unique())
                         ],
-                        value='max_0_30',
-                        clearable=False,
-                        style={'width': '280px', 'color': '#FF8C00', 'marginBottom': '8px'},
+                        multi=True,
+                        placeholder='Sélectionner un secteur...',
+                        style={'width': '100%'},
                         persistence=True, persistence_type='session'
-                    ),
-                    dcc.Graph(id='analyse_correlation_heatmap', style={'height': '45vh'})
-                ], style={'marginTop': '10px'}),
+                    )
+                ]),
                 html.Div([
-                    html.H5('Corrélation croisée journalière (0–30 min) — 15 derniers jours'),
-                    dcc.Graph(id='analyse_crosscorr_daily_scatter', style={'height': '45vh'})
-                ], style={'marginTop': '10px'})
-            ], style={'backgroundColor': '#1E1E1E', 'padding': '10px', 'borderRadius': '8px'})
-        ], style={'display': 'grid', 'gridTemplateColumns': '1fr', 'gap': '10px', 'marginTop': '10px'}),
+                    html.Label('Actions', style=SECTION_TITLE_STYLE),
+                    dcc.Dropdown(
+                        id='analyse_shares_dropdown',
+                        options=[
+                            {'label': f'{row.symbol}', 'value': row.symbol}
+                            for row in shM.dfShares.sort_values(by='symbol').itertuples()
+                        ],
+                        multi=True,
+                        placeholder='Sélectionner des actions...',
+                        style={'width': '100%'},
+                        persistence=True, persistence_type='session'
+                    )
+                ])
+            ], style={
+                'display': 'grid',
+                'gridTemplateColumns': 'repeat(auto-fit, minmax(280px, 1fr))',
+                'gap': '16px'
+            })
+        ], style=CARD_STYLE),
 
-        # Graphe potentiels quotidiens — 15 derniers jours (une courbe par action)
+        # Section Corrélations
         html.Div([
-            html.H5('Potentiels quotidiens — 15 derniers jours ouvrés'),
+            html.Div([
+                html.Span('📊', style={'fontSize': '1.25rem'}),
+                html.Span('Corrélations multi-actifs', style={
+                    'fontSize': '1.125rem',
+                    'fontWeight': '600',
+                    'color': '#a78bfa',
+                    'marginLeft': '10px'
+                })
+            ], style={'marginBottom': '20px', 'display': 'flex', 'alignItems': 'center'}),
+            
+            # Tables de corrélation par lag
+            html.Div([
+                html.Div([
+                    html.H6('Décalage 0 min', style={'color': '#f8fafc', 'marginBottom': '8px', 'fontSize': '0.875rem'}),
+                    html.Div(id='analyse_corr_table_lag_0')
+                ], style=INNER_CARD_STYLE),
+                html.Div([
+                    html.H6('Décalage 1 min', style={'color': '#f8fafc', 'marginBottom': '8px', 'fontSize': '0.875rem'}),
+                    html.Div(id='analyse_corr_table_lag_1')
+                ], style=INNER_CARD_STYLE),
+                html.Div([
+                    html.H6('Décalage 3 min', style={'color': '#f8fafc', 'marginBottom': '8px', 'fontSize': '0.875rem'}),
+                    html.Div(id='analyse_corr_table_lag_3')
+                ], style=INNER_CARD_STYLE),
+                html.Div([
+                    html.H6('Décalage 6 min', style={'color': '#f8fafc', 'marginBottom': '8px', 'fontSize': '0.875rem'}),
+                    html.Div(id='analyse_corr_table_lag_6')
+                ], style=INNER_CARD_STYLE),
+                html.Div([
+                    html.H6('Décalage 10 min', style={'color': '#f8fafc', 'marginBottom': '8px', 'fontSize': '0.875rem'}),
+                    html.Div(id='analyse_corr_table_lag_10')
+                ], style=INNER_CARD_STYLE)
+            ], style={
+                'display': 'grid',
+                'gridTemplateColumns': 'repeat(auto-fit, minmax(280px, 1fr))',
+                'gap': '12px',
+                'marginBottom': '20px'
+            }),
+            
+            # Heatmap
+            html.Div([
+                html.H5('🗺️ Heatmap de corrélation', style={'color': '#f8fafc', 'marginBottom': '12px'}),
+                dcc.Dropdown(
+                    id='analyse_corr_heatmap_lag',
+                    options=[
+                        {'label': '⏱️ Décalage 0 min', 'value': 0},
+                        {'label': '⏱️ Décalage 1 min', 'value': 1},
+                        {'label': '⏱️ Décalage 3 min', 'value': 3},
+                        {'label': '⏱️ Décalage 6 min', 'value': 6},
+                        {'label': '⏱️ Décalage 10 min', 'value': 10},
+                        {'label': '🔥 Max (0–30 min)', 'value': 'max_0_30'},
+                    ],
+                    value='max_0_30',
+                    clearable=False,
+                    style={'width': '280px', 'marginBottom': '12px'},
+                    persistence=True, persistence_type='session'
+                ),
+                dcc.Graph(id='analyse_correlation_heatmap', style={'height': '45vh'})
+            ], style={**INNER_CARD_STYLE, 'marginBottom': '16px'}),
+            
+            # Cross-correlation scatter
+            html.Div([
+                html.H5('📈 Corrélation croisée journalière (0–30 min)', style={'color': '#f8fafc', 'marginBottom': '12px'}),
+                dcc.Graph(id='analyse_crosscorr_daily_scatter', style={'height': '45vh'})
+            ], style=INNER_CARD_STYLE)
+        ], style=CARD_STYLE),
+
+        # Section Potentiels quotidiens
+        html.Div([
+            html.Div([
+                html.Span('📉', style={'fontSize': '1.25rem'}),
+                html.Span('Potentiels quotidiens — 15 derniers jours', style={
+                    'fontSize': '1.125rem',
+                    'fontWeight': '600',
+                    'color': '#a78bfa',
+                    'marginLeft': '10px'
+                })
+            ], style={'marginBottom': '16px', 'display': 'flex', 'alignItems': 'center'}),
             dcc.Loading(dcc.Graph(id='analyse_daily_potential_graph', style={'height': '45vh'}), type='default')
-        ], style={'backgroundColor': '#1E1E1E', 'padding': '10px', 'borderRadius': '8px', 'marginTop': '10px'}),
+        ], style=CARD_STYLE),
 
-        # Statistiques par action (déplacé depuis Prédiction)
+        # Section Statistiques
         html.Div([
-            html.Div('Statistiques par action', style={'color': '#FF8C00', 'marginBottom': '8px', 'fontWeight': 'bold'}),
+            html.Div([
+                html.Span('📋', style={'fontSize': '1.25rem'}),
+                html.Span('Statistiques par action', style={
+                    'fontSize': '1.125rem',
+                    'fontWeight': '600',
+                    'color': '#a78bfa',
+                    'marginLeft': '10px'
+                })
+            ], style={'marginBottom': '16px', 'display': 'flex', 'alignItems': 'center'}),
+            
             dcc.Dropdown(
                 id='stats_share_list',
                 options=[],
                 multi=True,
-                placeholder='Choisir des actions pour les statistiques',
-                style={'width': '100%', 'color': '#FF8C00'},
+                placeholder='Choisir des actions pour les statistiques...',
+                style={'width': '100%', 'marginBottom': '16px'},
                 persistence=True, persistence_type='session'
             ),
             html.Div(id='share_stats_panel', style={
-                'marginTop': '10px',
-                'backgroundColor': '#1E1E1E',
-                'padding': '10px',
-                'borderRadius': '8px',
-                'color': '#FFFFFF'
+                **INNER_CARD_STYLE,
+                'color': '#f8fafc'
             })
-        ], style={'backgroundColor': '#2E2E2E', 'padding': '10px', 'borderRadius': '8px', 'marginTop': '10px'}),
+        ], style=CARD_STYLE),
 
-        # Top 10 corrélations globales avec lag 0–30 min (15 jours)
+        # Section Top 10
         html.Div([
-            html.H5('Top 10 corrélations (0–30 min) — 15 derniers jours'),
+            html.Div([
+                html.Span('🏆', style={'fontSize': '1.25rem'}),
+                html.Span('Top 10 corrélations (0–30 min)', style={
+                    'fontSize': '1.125rem',
+                    'fontWeight': '600',
+                    'color': '#a78bfa',
+                    'marginLeft': '10px'
+                })
+            ], style={'marginBottom': '16px', 'display': 'flex', 'alignItems': 'center'}),
+            
             dcc.Interval(id='analyse_topcorr_poll', interval=1000, n_intervals=0, disabled=True),
-            html.Button('Calculer le Top 10', id='analyse_topcorr_btn', n_clicks=0,
-                        style={'backgroundColor': '#FF8C00', 'color': '#000000', 'border': 'none', 'padding': '8px 12px', 'borderRadius': '6px'}),
-            html.Div(id='analyse_topcorr_result', style={'whiteSpace': 'pre-wrap', 'color': '#FFFFFF', 'marginTop': '8px'})
-        ], style={'backgroundColor': '#1E1E1E', 'padding': '10px', 'borderRadius': '8px', 'marginTop': '10px'}),
+            html.Button('🔄 Calculer le Top 10', id='analyse_topcorr_btn', n_clicks=0, style={
+                'background': 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)',
+                'color': 'white',
+                'border': 'none',
+                'padding': '12px 24px',
+                'borderRadius': '10px',
+                'fontWeight': '600',
+                'fontFamily': 'Outfit, sans-serif',
+                'cursor': 'pointer',
+                'boxShadow': '0 4px 15px rgba(99, 102, 241, 0.3)',
+                'marginBottom': '16px'
+            }),
+            html.Div(id='analyse_topcorr_result', style={
+                'whiteSpace': 'pre-wrap',
+                'color': '#f8fafc',
+                'fontFamily': 'JetBrains Mono, monospace',
+                'fontSize': '0.875rem',
+                'backgroundColor': '#12121a',
+                'padding': '16px',
+                'borderRadius': '10px',
+                'border': '1px solid rgba(148, 163, 184, 0.1)'
+            })
+        ], style=CARD_STYLE),
+
+        # Spacer pour navigation
+        html.Div(style={'height': '100px'}),
 
         # Navigation
         create_navigation()
-    ], style={'backgroundColor': 'black', 'minHeight': '100vh', 'padding': '20px'})
+    ], style={
+        'backgroundColor': '#0a0a0f',
+        'minHeight': '100vh',
+        'padding': '24px 32px',
+        'width': '100%',
+        'maxWidth': '100%',
+        'margin': '0'
+    })
 
 
 # Pour compatibilité avec index.py qui attend `layout`

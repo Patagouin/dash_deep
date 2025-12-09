@@ -1,34 +1,66 @@
 from dash import html, dcc, Input, Output
 from app import app
 
+# Définition des icônes (emoji) pour chaque page
+NAV_ICONS = {
+    'dashboard': '📊',
+    'visualisation': '📈',
+    'analyse': '📉',
+    'prediction': '🤖',
+    'simulation': '🧪',
+    'playground': '🧩',
+    'transaction': '💸',
+    'update': '🔄',
+    'config': '⚙️'
+}
+
+
+def create_nav_item(page_id, label, href, icon_key):
+    """Crée un élément de navigation avec une icône."""
+    icon = NAV_ICONS.get(icon_key)
+
+    children = []
+    if icon:
+        children.append(
+            html.Span(
+                icon,
+                className='nav-icon',
+                style={'marginRight': '6px'}
+            )
+        )
+
+    children.append(html.Span(label, className='nav-label'))
+
+    return html.A(
+        children,
+        href=href,
+        id=f'nav-{page_id}',
+        className='nav-link',
+        **{'data-page': page_id}
+    )
+
 def create_navigation():
+    """Crée la barre de navigation principale avec un design moderne."""
+    nav_items = [
+        ('dashboard', 'Dashboard', '/dashboard', 'dashboard'),
+        ('visualisation', 'Visualisation', '/visualisation', 'visualisation'),
+        ('analyse', 'Analyse', '/analyse', 'analyse'),
+        ('prediction', 'Prédiction', '/prediction', 'prediction'),
+        ('simulation', 'Simulation', '/simulation', 'simulation'),
+        ('playground', 'Playground', '/playground', 'playground'),
+        ('transaction', 'Transaction', '/transaction', 'transaction'),
+        ('update', 'Update', '/update', 'update'),
+        ('config', 'Config', '/config', 'config'),
+    ]
+    
+    nav_elements = []
+    for i, (page_id, label, href, icon) in enumerate(nav_items):
+        nav_elements.append(create_nav_item(page_id, label, href, icon))
+        
     return html.Div([
-        html.Hr(style={
-            'width': '50%',
-            'margin': '10px auto',
-            'borderTop': '1px solid #666'
-        }),
         html.Div([
-            html.Div([
-                html.A('Dashboard', href='/dashboard', id='nav-dashboard', className='nav-link', **{'data-page': 'dashboard'}),
-                html.Span(' | ', className='nav-separator'),
-                html.A('Visualisation', href='/visualisation', id='nav-visualisation', className='nav-link', **{'data-page': 'visualisation'}),
-                html.Span(' | ', className='nav-separator'),
-                html.A('Analyse', href='/analyse', id='nav-analyse', className='nav-link', **{'data-page': 'analyse'}),
-                html.Span(' | ', className='nav-separator'),
-                html.A('Prediction', href='/prediction', id='nav-prediction', className='nav-link', **{'data-page': 'prediction'}),
-                html.Span(' | ', className='nav-separator'),
-                html.A('Simulation', href='/simulation', id='nav-simulation', className='nav-link', **{'data-page': 'simulation'}),
-                html.Span(' | ', className='nav-separator'),
-                html.A('Playground', href='/playground', id='nav-playground', className='nav-link', **{'data-page': 'playground'}),
-                html.Span(' | ', className='nav-separator'),
-                html.A('Transaction', href='/transaction', id='nav-transaction', className='nav-link', **{'data-page': 'transaction'}),
-                html.Span(' | ', className='nav-separator'),
-                html.A('Update', href='/update', id='nav-update', className='nav-link', **{'data-page': 'update'}),
-                html.Span(' | ', className='nav-separator'),
-                html.A('Config', href='/config', id='nav-config', className='nav-link', **{'data-page': 'config'})
-            ], className='nav-container')
-        ])
+            html.Div(nav_elements, className='nav-container')
+        ], className='nav-inner')
     ], className='navigation-bar')
 
 def create_page_help(title, content_markdown):
@@ -43,7 +75,6 @@ def create_page_help(title, content_markdown):
     safe_id = "help-toggle-" + "".join([c if c.isalnum() else "_" for c in title])
     
     return html.Div([
-        # Conteneur tooltip CSS
         html.Div([
             # Checkbox invisible qui contrôle l'état affiché/caché
             dcc.Input(type='checkbox', id=safe_id, className='help-toggle-checkbox'),
@@ -54,19 +85,16 @@ def create_page_help(title, content_markdown):
                 htmlFor=safe_id,
                 className='help-tooltip-icon',
                 style={
-                    'width': '30px',
-                    'height': '30px',
+                    'width': '40px',
+                    'height': '40px',
                     'borderRadius': '50%',
-                    'backgroundColor': '#4CAF50',
-                    'color': 'white',
                     'display': 'flex',
                     'alignItems': 'center',
                     'justifyContent': 'center',
-                    'fontWeight': 'bold',
-                    'fontSize': '18px',
-                    'boxShadow': '0 2px 5px rgba(0,0,0,0.3)',
-                    'cursor': 'pointer', # Indique qu'on peut cliquer
-                    'userSelect': 'none' # Évite de sélectionner le texte du ?
+                    'fontWeight': '600',
+                    'fontSize': '20px',
+                    'cursor': 'pointer',
+                    'userSelect': 'none'
                 }
             ),
             # Contenu du tooltip (caché par défaut en CSS, affiché quand checkbox checked)
@@ -76,8 +104,8 @@ def create_page_help(title, content_markdown):
             ], className='help-tooltip-text')
         ], className='help-tooltip-container')
     ], style={
-        'position': 'fixed', # Fixed pour rester en place même au scroll
-        'top': '80px',       # En dessous de la barre de titre/nav potentielle
+        'position': 'fixed',
+        'top': '20px',
         'right': '20px',
         'zIndex': '9998'
     })

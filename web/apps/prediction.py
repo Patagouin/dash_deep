@@ -9,6 +9,16 @@ from web.apps.prediction_visualization import get_visualization_layout
 # Import the callbacks package to register all modularized callbacks
 import web.apps.prediction_callbacks  # noqa: F401
 
+# Styles communs
+CARD_STYLE = {
+    'backgroundColor': '#1a1a24',
+    'padding': '24px',
+    'borderRadius': '16px',
+    'border': '1px solid rgba(148, 163, 184, 0.1)',
+    'boxShadow': '0 4px 6px -1px rgba(0, 0, 0, 0.4)',
+    'marginBottom': '24px'
+}
+
 help_text = """
 ### Prédiction (Deep Learning)
 
@@ -37,39 +47,91 @@ Permet de vérifier visuellement la qualité des prédictions.
 
 layout = html.Div([
     create_page_help("Aide Prédiction", help_text),
-    # Fixed container for the top banner
+    
+    # En-tête fixe
     html.Div([
-        html.H3('Prediction'),
+        html.H3('Prédiction', style={
+            'margin': '0',
+            'textAlign': 'center'
+        }),
+        html.P('Intelligence Artificielle & Deep Learning', style={
+            'textAlign': 'center',
+            'color': '#94a3b8',
+            'marginTop': '8px',
+            'marginBottom': '0',
+            'fontSize': '0.9375rem'
+        })
     ], style={
         'position': 'fixed',
         'top': 0,
         'left': 0,
         'right': 0,
-        'backgroundColor': 'black',
-        'padding': '20px',
-        'zIndex': 1000
+        'backgroundColor': '#0a0a0f',
+        'padding': '20px 24px',
+        'zIndex': 1000,
+        'borderBottom': '1px solid rgba(148, 163, 184, 0.1)',
+        'backdropFilter': 'blur(10px)'
     }),
 
-    # Scrollable container for the rest of the content
+    # Contenu scrollable
     html.Div([
-        # Import the "Paramètres du Modèle" section
-        get_parameters_layout(),
+        # Section Paramètres
+        html.Div([
+            html.Div([
+                html.Span('⚙️', style={'fontSize': '1.25rem'}),
+                html.Span('Paramètres du Modèle', style={
+                    'fontSize': '1.125rem',
+                    'fontWeight': '600',
+                    'color': '#a78bfa',
+                    'marginLeft': '10px'
+                })
+            ], style={'marginBottom': '20px', 'display': 'flex', 'alignItems': 'center'}),
+            get_parameters_layout(),
+        ], style=CARD_STYLE),
 
-        # Import the "Résultats du Modèle" section
-        get_results_layout(),
+        # Section Résultats
+        html.Div([
+            html.Div([
+                html.Span('📊', style={'fontSize': '1.25rem'}),
+                html.Span('Résultats du Modèle', style={
+                    'fontSize': '1.125rem',
+                    'fontWeight': '600',
+                    'color': '#a78bfa',
+                    'marginLeft': '10px'
+                })
+            ], style={'marginBottom': '20px', 'display': 'flex', 'alignItems': 'center'}),
+            get_results_layout(),
+        ], style=CARD_STYLE),
 
-        # Import the "Visualisation des Prédictions" section
-        get_visualization_layout(),
+        # Section Visualisation
+        html.Div([
+            html.Div([
+                html.Span('📈', style={'fontSize': '1.25rem'}),
+                html.Span('Visualisation des Prédictions', style={
+                    'fontSize': '1.125rem',
+                    'fontWeight': '600',
+                    'color': '#a78bfa',
+                    'marginLeft': '10px'
+                })
+            ], style={'marginBottom': '20px', 'display': 'flex', 'alignItems': 'center'}),
+            get_visualization_layout(),
+        ], style=CARD_STYLE),
+
+        # Spacer pour navigation
+        html.Div(style={'height': '100px'}),
 
         create_navigation()
     ], style={
-        'marginTop': '80px',
-        'padding': '20px',
-        'backgroundColor': 'black',
-        'minHeight': 'calc(100vh - 80px)',
-        'overflowY': 'auto'
+        'marginTop': '100px',
+        'padding': '24px 32px',
+        'backgroundColor': '#0a0a0f',
+        'minHeight': 'calc(100vh - 100px)',
+        'width': '100%',
+        'maxWidth': '100%',
+        'margin': '100px 0 0'
     })
 ], style={
-    'backgroundColor': 'black',
-    'minHeight': '100vh'
+    'backgroundColor': '#0a0a0f',
+    'minHeight': '100vh',
+    'width': '100%'
 })
