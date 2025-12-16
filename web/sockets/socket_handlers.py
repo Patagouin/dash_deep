@@ -15,7 +15,7 @@ def handle_connect():
     socketio.emit('update_terminal', {'output': 'Socket.IO Connected!\n'}, namespace='/', room=sid)
 
 @socketio.on('disconnect')
-def handle_disconnect():
+def handle_disconnect(data=None):
     sid = request.sid
     logging.info(f"Socket disconnected: {sid}")
 

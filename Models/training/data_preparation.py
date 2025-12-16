@@ -1,36 +1,15 @@
+# -*- coding: utf-8 -*-
 """
-Fonctions de préparation des données pour l'entraînement et l'inférence.
+Fonctions de préparation des données pour l'entraînement ML.
+Extraites de playground.py pour réutilisation dans d'autres pages.
 """
 
-import pandas as pd
 import numpy as np
-import logging
+import pandas as pd
 from io import StringIO
-from typing import Tuple, List, Optional
+import logging
 
-
-def estimate_nb_quotes_per_day(df: pd.DataFrame) -> int:
-    """
-    Estime le nombre de quotes par jour à partir d'un DataFrame.
-    
-    Args:
-        df: DataFrame avec un index DateTimeIndex
-    
-    Returns:
-        Nombre estimé de quotes par jour
-    """
-    if df is None or df.empty:
-        return 0
-    
-    try:
-        days = df.index.normalize().unique()
-        if len(days) == 0:
-            return 0
-        
-        counts = [len(df[df.index.normalize() == d]) for d in days]
-        return int(np.mean(counts)) if counts else 0
-    except Exception:
-        return len(df) // max(1, len(df.index.normalize().unique()))
+from web.services.synthetic import estimate_nb_quotes_per_day
 
 
 def prepare_xy_from_store(
@@ -38,32 +17,27 @@ def prepare_xy_from_store(
     look_back: int,
     stride: int,
     nb_y: int,
-    first_minutes: Optional[int] = None,
+    first_minutes: int = None,
     prediction_type: str = 'return'
-) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], int]:
+):
     """
     Prépare les batches X et Y pour l'entraînement.
     
     Args:
-        store_json: JSON contenant les données (format pandas split)
+        store_json: Données JSON (format split)
         look_back: Taille de la fenêtre d'entrée
         stride: Pas d'échantillonnage
         nb_y: Nombre de points futurs à prédire
-        first_minutes: Nombre de minutes d'observation (ou look_back * stride si None)
-        prediction_type: 'return' (variation relative), 'price' (prix normalisé), ou 'signal'
+        first_minutes: Période d'observation (si None, utilise look_back * stride)
+        prediction_type: 'return' (variation relative), 'price' (prix normalisé), ou 'signal' (classification)
     
     Returns:
-        Tuple (trainX, trainY, testX, testY, nb_per_day)
+        trainX, trainY, testX, testY, nb_per_day
     """
     if not store_json:
         return None, None, None, None, 0
     
-    try:
-        df = pd.read_json(StringIO(store_json), orient='split')
-    except Exception as e:
-        logging.error(f"[DataPrep] Erreur parsing JSON: {e}")
-        return None, None, None, None, 0
-    
+    df = pd.read_json(StringIO(store_json), orient='split')
     df = df.replace([np.inf, -np.inf], np.nan).dropna(how='any')
     nb_per_day = estimate_nb_quotes_per_day(df)
     
@@ -84,11 +58,12 @@ def prepare_xy_from_store(
 
     obs_window = int(first_minutes) if first_minutes is not None and first_minutes > 0 else int(look_back * stride)
 
-    def create_xy(dataset: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+    def create_xy(dataset: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
         X, Y = [], []
         if dataset is None or dataset.empty:
             return np.zeros((0, look_back, 1), dtype=float), np.zeros((0, nb_y), dtype=float)
         
+        # Itérer par jour
         norm = dataset.index.normalize()
         days_u = norm.unique()
         
@@ -97,7 +72,7 @@ def prepare_xy_from_store(
             if day_df.shape[0] < obs_window + max(2, nb_y):
                 continue
             
-            # Sélectionner les points pour construire la fenêtre d'entrée
+            # Sélectionner les obs_window premières minutes pour construire la fenêtre d'entrée
             if obs_window < look_back * stride:
                 available_points = min(obs_window, day_df.shape[0])
                 if available_points < look_back:
@@ -121,7 +96,9 @@ def prepare_xy_from_store(
                 seq[:, 1] = np.log1p(np.clip(seq[:, 1], a_min=0.0, a_max=None))
             
             remainder = day_df.shape[0] - obs_window
-            if remainder <= 0 or remainder <= nb_y:
+            if remainder <= 0:
+                continue
+            if remainder <= nb_y:
                 continue
             
             stride_y = remainder // (nb_y + 1)
@@ -132,20 +109,26 @@ def prepare_xy_from_store(
             
             y_vals = []
             prev_price = base_price
-            prices_list = [base_price]
+            prices_list = [base_price]  # Pour logging
             
             if prediction_type == 'signal':
+                # Classification 5 classes : -2, -1, 0, 1, 2 (mappées 0..4)
                 horizon = offsets[-1] if offsets else 1
                 if obs_window + horizon < day_df.shape[0]:
                     final_p = float(day_df.iloc[obs_window + horizon, 0])
                     ret = (final_p - base_price) / base_price
                     
-                    if ret < -0.005: label = 0
-                    elif ret < -0.001: label = 1
-                    elif ret < 0.001: label = 2
-                    elif ret < 0.005: label = 3
-                    else: label = 4
-                    
+                    # Seuils arbitraires
+                    if ret < -0.005:
+                        label = 0   # -2 (Strong Drop)
+                    elif ret < -0.001:
+                        label = 1   # -1 (Drop)
+                    elif ret < 0.001:
+                        label = 2   # 0 (Flat)
+                    elif ret < 0.005:
+                        label = 3   # 1 (Rise)
+                    else:
+                        label = 4   # 2 (Strong Rise)
                     y_vals.append(label)
                     prices_list.append(final_p)
             else:
@@ -154,9 +137,11 @@ def prepare_xy_from_store(
                     prices_list.append(y_price)
                     
                     if prediction_type == 'price':
+                        # Mode Prix : ratio par rapport au dernier prix connu (base_price)
                         val = y_price / base_price
                         y_vals.append(val)
                     else:
+                        # Mode Return (défaut) : variations relatives pas à pas
                         if i == 0:
                             variation = (y_price / prev_price) - 1.0
                             y_vals.append(variation)
@@ -167,6 +152,7 @@ def prepare_xy_from_store(
                             y_vals.append(variation)
                         prev_price = y_price
             
+            # Log détaillé seulement pour le premier
             if len(X) == 0:
                 logging.info(f"[Prepare XY] Mode={prediction_type}. Exemple premier échantillon:")
                 logging.info(f"  Prix: {[f'{p:.2f}' for p in prices_list]}")
@@ -181,7 +167,6 @@ def prepare_xy_from_store(
 
     trainX, trainY = create_xy(train_df)
     testX, testY = create_xy(test_df)
-    
     return trainX, trainY, testX, testY, nb_per_day
 
 
@@ -190,32 +175,31 @@ def prepare_xy_for_inference(
     look_back: int,
     stride: int,
     nb_y: int,
-    first_minutes: Optional[int] = None,
+    first_minutes: int = None,
     prediction_type: str = 'return'
-) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[pd.DataFrame], int, List]:
+):
     """
     Prépare X/Y pour l'inférence (généralisation) sur la courbe courante.
+    Contrairement à prepare_xy_from_store, on ne fait pas de split train/test :
+    chaque jour valide fournit un seul échantillon (X, Y) basé sur les premières minutes.
     
     Args:
-        store_json: JSON contenant les données
+        store_json: Données JSON (format split)
         look_back: Taille de la fenêtre d'entrée
         stride: Pas d'échantillonnage
         nb_y: Nombre de points futurs à prédire
-        first_minutes: Nombre de minutes d'observation
-        prediction_type: Type de prédiction
+        first_minutes: Période d'observation
+        prediction_type: 'return' ou 'price'
     
     Returns:
-        Tuple (X, Y, df, obs_window, sample_days)
+        X, Y, df, obs_window, sample_days
     """
     if not store_json:
         return None, None, None, 0, []
     
-    try:
-        df = pd.read_json(StringIO(store_json), orient='split')
-    except Exception:
-        return None, None, None, 0, []
-    
+    df = pd.read_json(StringIO(store_json), orient='split')
     df = df.replace([np.inf, -np.inf], np.nan).dropna(how='any')
+    
     if df is None or df.empty:
         return None, None, None, 0, []
 
@@ -233,6 +217,7 @@ def prepare_xy_for_inference(
         if day_df.shape[0] < obs_window + max(2, nb_y):
             continue
 
+        # Sélection des points d'observation
         if obs_window < look_back * stride:
             available_points = min(obs_window, day_df.shape[0])
             if available_points < look_back:
@@ -250,6 +235,7 @@ def prepare_xy_for_inference(
         if base_price == 0:
             continue
 
+        # Normaliser input
         seq[:, 0] = seq[:, 0] / base_price
 
         remainder = day_df.shape[0] - obs_window
@@ -291,6 +277,5 @@ def prepare_xy_for_inference(
 
     X = np.asarray(X_list, dtype=float)
     Y = np.asarray(Y_list, dtype=float)
-    
     return X, Y, df, obs_window, sample_days
 

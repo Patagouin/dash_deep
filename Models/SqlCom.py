@@ -713,6 +713,20 @@ class SqlCom:
             # Ne pas tuer le process, laisser l'appelant gérer
             raise
 
+    def set_is_updated(self, shareObj, is_updated: bool):
+        """Force le flag isUpdated pour une action donnée.
+        
+        Remarque: le schéma stocke 'true'/'false' en string.
+        """
+        try:
+            result = 'true' if is_updated else 'false'
+            update_query = f''' UPDATE "sharesInfos" SET "isUpdated"='{result}' WHERE "idShare"='{shareObj.idShare}';\n '''
+            self.cursor.execute(update_query)
+            self.connection.commit()
+        except Exception as error:
+            print(f"Error while forcing isUpdated for {getattr(shareObj, 'symbol', 'UNKNOWN')}: ", error)
+            raise
+
     def compute_frequence_cotation_via_graph(self, shareObj):
         select_query = f'''SELECT "time" FROM "sharesPricesQuots" WHERE "idShare"='{shareObj.idShare}' '''
         self.cursor.execute(select_query)

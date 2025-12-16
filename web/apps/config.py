@@ -33,13 +33,16 @@ def load_config():
     """
     if not os.path.exists(CONFIG_FILE_PATH):
         # Si le fichier n'existe pas, créer un fichier par défaut
+        project_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        default_export_path = os.path.join(project_dir, "exports")
         default_config = {
             "broker_type": "broker_a",
             "broker_username": "",
             "broker_password": "",
             "broker_host": "localhost",
             "broker_port": 5432,
-            "broker_database": "stocksprices"
+            "broker_database": "stocksprices",
+            "export_path": default_export_path
         }
         save_config(default_config)
         return default_config

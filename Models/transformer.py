@@ -7,14 +7,33 @@ Contient:
 """
 
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras import layers, Model
-from tensorflow.keras.layers import (
-    Input, Dense, LSTM, Dropout, LayerNormalization, 
-    MultiHeadAttention, GlobalAveragePooling1D, Concatenate,
-    Add, Embedding
-)
-from tensorflow.keras.optimizers import Adam
+# IMPORTANT: Import lazy de TensorFlow pour permettre la configuration CUDA
+# dans les workers spawn avant l'import
+def _get_tf_imports():
+    """Import lazy de TensorFlow et ses modules."""
+    import tensorflow as tf
+    from tensorflow.keras import layers, Model
+    from tensorflow.keras.layers import (
+        Input, Dense, LSTM, Dropout, LayerNormalization, 
+        MultiHeadAttention, GlobalAveragePooling1D, Concatenate,
+        Add, Embedding
+    )
+    from tensorflow.keras.optimizers import Adam
+    return tf, layers, Model, Input, Dense, LSTM, Dropout, LayerNormalization, \
+           MultiHeadAttention, GlobalAveragePooling1D, Concatenate, Add, Embedding, Adam
+
+# Import initial pour compatibilité (sera réimporté dans les workers)
+_tf_cache = None
+def _ensure_tf():
+    """S'assure que TensorFlow est importé."""
+    global _tf_cache
+    if _tf_cache is None:
+        _tf_cache = _get_tf_imports()
+    return _tf_cache
+
+# Import initial pour compatibilité
+tf, layers, Model, Input, Dense, LSTM, Dropout, LayerNormalization, \
+MultiHeadAttention, GlobalAveragePooling1D, Concatenate, Add, Embedding, Adam = _ensure_tf()
 import logging
 import hashlib
 import requests
@@ -160,6 +179,11 @@ def create_transformer_model(
     Returns:
         Modèle Keras compilé
     """
+    # Réimporter TensorFlow pour s'assurer qu'il utilise la config CUDA du worker
+    # (nécessaire dans les workers spawn)
+    tf, layers, Model, Input, Dense, LSTM, Dropout, LayerNormalization, \
+    MultiHeadAttention, GlobalAveragePooling1D, Concatenate, Add, Embedding, Adam = _ensure_tf()
+    
     ff_dim = embed_dim * ff_multiplier
     
     inputs = Input(shape=(look_back, num_features))
@@ -252,6 +276,11 @@ def create_hybrid_lstm_transformer_model(
     Returns:
         Modèle Keras compilé
     """
+    # Réimporter TensorFlow pour s'assurer qu'il utilise la config CUDA du worker
+    # (nécessaire dans les workers spawn)
+    tf, layers, Model, Input, Dense, LSTM, Dropout, LayerNormalization, \
+    MultiHeadAttention, GlobalAveragePooling1D, Concatenate, Add, Embedding, Adam = _ensure_tf()
+    
     ff_dim = embed_dim * ff_multiplier
     
     inputs = Input(shape=(look_back, num_features))
@@ -346,6 +375,9 @@ def create_hybrid_lstm_transformer_model(
 
 def _build_metrics(use_directional_accuracy: bool, prediction_type: str) -> list:
     """Construit la liste des métriques pour la compilation."""
+    # Réimporter TensorFlow pour s'assurer qu'il utilise la config CUDA du worker
+    tf, _, _, _, _, _, _, _, _, _, _, _, _, _ = _ensure_tf()
+    
     metrics_list = []
     
     if use_directional_accuracy:

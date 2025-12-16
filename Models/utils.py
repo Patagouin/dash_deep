@@ -6,6 +6,7 @@ import pytz
 import numpy as np
 from collections import OrderedDict
 import os
+from typing import Optional, Tuple, Dict, Any
 
 logType = {"Success":0, "Warning":1, "Error":2}
 
@@ -93,16 +94,28 @@ def downloadDataFromYahoo(share, beginDate='max', endDate='max'):
     listDate = getListOfDateForDownload(beginDate, endDate)
 
     curTicker = yf.Ticker(share.symbol)
+    slices = []
     for date in listDate:
         dfSlice = curTicker.history(interval='1m',start=date[0],end=date[1], rounding=False, 
                                     actions=True, prepost=True, auto_adjust=False)
-        df = pd.concat([df, dfSlice])
+        # Eviter les concat sur entrées vides (FutureWarning pandas + plus rapide)
+        if dfSlice is not None and not dfSlice.empty:
+            slices.append(dfSlice)
         if beginDate == 'max':  #TODO UPDATE YFINANCE TO NOT HAVE TO CHECK THAT !!
             beginDateTmp = datetime.datetime.now()-datetime.timedelta(days=30, minutes=-1)
+            # On ne peut appliquer ce filtre qu'une fois qu'on a effectivement des données
+        else:
+            # Rien
+            pass
+
+    if len(slices) > 0:
+        df = pd.concat(slices)
+        if beginDate == 'max':
+            beginDateTmp = datetime.datetime.now()-datetime.timedelta(days=30, minutes=-1)
             if df.size > 0 and df.iloc[0].name.replace(tzinfo=None) < beginDateTmp:
-                df=df.drop(df.iloc[0].name)
+                df = df.drop(df.iloc[0].name)
         elif df.size > 0 and df.iloc[0].name.replace(tzinfo=None) < beginDate:  #TODO UPDATE YFINANCE TO NOT HAVE TO CHECK THAT !!
-            df=df.drop(df.iloc[0].name)
+            df = df.drop(df.iloc[0].name)
     return df
 
 def downloadDataFromYahooByTickerName(tickerName, beginDate='max', endDate='now'):
@@ -110,11 +123,48 @@ def downloadDataFromYahooByTickerName(tickerName, beginDate='max', endDate='now'
     listDate = getListOfDateForDownload(beginDate, endDate)
 
     curTicker = yf.Ticker(tickerName)
+    slices = []
     for date in listDate:
         dfSlice = curTicker.history(interval='1m',start=date[0],end=date[1], rounding=False, 
                                     actions=True, prepost=True, auto_adjust=False)
-        df = pd.concat([df, dfSlice])
+        if dfSlice is not None and not dfSlice.empty:
+            slices.append(dfSlice)
+    if len(slices) > 0:
+        df = pd.concat(slices)
     return df
+
+
+def yahoo_symbol_status(symbol: str, lookback_days: int = 30) -> Tuple[bool, str]:
+    """Vérifie si un symbole est 'actif' côté Yahoo Finance.
+    
+    Critères (pragmatiques):
+    - On tente un historique daily récent (léger). Si vide => symbole probablement invalide/delisté/non supporté.
+    - On récupère aussi la timezone si dispo.
+    
+    Returns:
+        (is_active, reason)
+        reason: 'ok' | 'no_recent_daily_data' | 'no_timezone' | 'exception:<...>'
+    """
+    try:
+        t = yf.Ticker(symbol)
+        tz = None
+        try:
+            fi = getattr(t, "fast_info", None)
+            if fi is not None:
+                tz = fi.get("timezone", None)
+        except Exception:
+            tz = None
+
+        # Demande légère: daily sur un lookback court
+        hist = t.history(period=f"{int(lookback_days)}d", interval="1d", actions=False, auto_adjust=False)
+        if hist is None or hist.empty:
+            # si timezone absente en plus, c'est quasi certain que le symbole n'est plus valide
+            if not tz:
+                return False, "no_timezone"
+            return False, "no_recent_daily_data"
+        return True, "ok"
+    except Exception as e:
+        return False, f"exception:{type(e).__name__}"
 
 def getListOfDateForDownload(beginDate='max', endDate='now'):
     ''' Because yfinance can only manage to download 1 week of 1m granularity, this function make couple of date of 1 week '''

@@ -10,6 +10,7 @@ import Models.Shares as sm
 import Models.utils as ut
 import logging
 import os
+import subprocess
 from web.apps.config import load_config
 from Models.SqlCom import SqlCom
 
@@ -74,6 +75,43 @@ BUTTON_INFO = {
     'transition': 'all 0.25s ease',
     'boxShadow': '0 4px 6px -1px rgba(59, 130, 246, 0.3)'
 }
+
+def get_db_backup_dir() -> str:
+    """
+    Retourne le dossier d'export de la BDD (CSV) configuré dans l'UI (page Config).
+
+    Remarque:
+    - On ne supporte plus d'autres chemins implicites (env var / data/DB / cwd).
+    - Si `export_path` est absent, on force l'utilisateur à le configurer.
+    """
+    config_data = load_config()
+    export_path = config_data.get("export_path", None)
+    if not export_path:
+        raise ValueError("export_path non configuré. Configure-le dans la page Config.")
+
+    os.makedirs(export_path, exist_ok=True)
+    if not os.path.isdir(export_path):
+        raise FileNotFoundError(f"Dossier d'export introuvable: {export_path}")
+
+    return export_path
+
+def open_folder_in_os(path: str) -> None:
+    if not path:
+        raise ValueError("Chemin vide")
+    if not os.path.isdir(path):
+        raise FileNotFoundError(f"Dossier introuvable: {path}")
+
+    if sys.platform.startswith("linux"):
+        subprocess.Popen(["xdg-open", path])
+        return
+    if sys.platform.startswith("darwin"):
+        subprocess.Popen(["open", path])
+        return
+    if sys.platform.startswith("win"):
+        os.startfile(path)  # type: ignore[attr-defined]
+        return
+
+    raise RuntimeError(f"OS non supporté: {sys.platform}")
 
 help_text = """
 ### Mise à jour des données
@@ -146,12 +184,28 @@ layout = html.Div([
                 style=BUTTON_INFO,
                 className='export-button'
             ),
+            html.Button(
+                '📂 Ouvrir dossier sauvegarde BDD',
+                id='open_backup_folder',
+                n_clicks=0,
+                style=BUTTON_INFO,
+                className='open-folder-button'
+            ),
         ], style={
             'display': 'flex',
             'gap': '12px',
             'flexWrap': 'wrap',
             'marginBottom': '20px'
         }),
+
+        html.Div(
+            id='open_backup_folder_status',
+            style={
+                'marginTop': '8px',
+                'color': '#94a3b8',
+                'fontSize': '0.875rem'
+            }
+        ),
         
         # Options (Checkboxes)
         html.Div([
@@ -376,8 +430,7 @@ def update_shares_in_background(check_duplicate, export_data):
 
         # Exporter les données si la case est cochée
         if export_data:
-            config_data = load_config()
-            export_path = config_data.get("export_path", os.getcwd())
+            export_path = get_db_backup_dir()
             from web.apps.config import export_database
             export_message = export_database(1, export_path)
             socketio.emit('update_terminal', {'output': f'📦 {export_message}\n'}, namespace='/')
@@ -399,8 +452,7 @@ def export_db_now(n_clicks):
     if not n_clicks:
         return ''
     try:
-        config_data = load_config()
-        export_path = config_data.get('export_path', os.getcwd())
+        export_path = get_db_backup_dir()
 
         sql_com = SqlCom(
             user=os.getenv('DB_USER'),
@@ -418,6 +470,24 @@ def export_db_now(n_clicks):
         error_message = f"❌ Error during export: {str(e)}"
         socketio.emit('update_terminal', {'output': error_message + '\n'}, namespace='/')
         return error_message
+
+@app.callback(
+    Output('open_backup_folder_status', 'children'),
+    Input('open_backup_folder', 'n_clicks')
+)
+def open_backup_folder(n_clicks):
+    if not n_clicks:
+        return ''
+    try:
+        backup_dir = get_db_backup_dir()
+        open_folder_in_os(backup_dir)
+        msg = f"📂 Dossier ouvert: {backup_dir}"
+        socketio.emit('update_terminal', {'output': msg + '\n'}, namespace='/')
+        return msg
+    except Exception as e:
+        msg = f"❌ Impossible d'ouvrir le dossier: {e}"
+        socketio.emit('update_terminal', {'output': msg + '\n'}, namespace='/')
+        return msg
 
 @app.callback(
     Output('progress_bar', 'style'),

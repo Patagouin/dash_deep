@@ -1,38 +1,39 @@
+# -*- coding: utf-8 -*-
 """
-Fonctions de construction des graphiques pour le Playground.
+Fonctions de construction de graphiques pour l'entraînement ML.
+Extraites de playground.py pour réutilisation dans d'autres pages.
 """
 
-import pandas as pd
 import numpy as np
-import plotly.graph_objs as go
+import pandas as pd
 from io import StringIO
-from typing import Optional, List, Dict, Tuple
+import plotly.graph_objs as go
 
 
-def build_segments_graph(
+def build_segments_graph_from_store(
     store_json: str,
     look_back: int,
     stride: int,
     first_minutes: int,
-    predictions: Optional[List] = None,
-    nb_y: Optional[int] = None,
-    predictions_train: Optional[List] = None,
+    predictions=None,
+    nb_y: int = None,
+    predictions_train=None,
     prediction_type: str = 'return',
-    extra_predictions: Optional[List[Dict]] = None
+    extra_predictions=None
 ) -> go.Figure:
     """
-    Construit le graphique des segments train/test avec prédictions.
+    Construit un graphe montrant les segments train/test et les prédictions.
     
     Args:
-        store_json: JSON contenant les données
-        look_back: Taille de la fenêtre
+        store_json: Données JSON (format split)
+        look_back: Taille de la fenêtre d'entrée
         stride: Pas d'échantillonnage
-        first_minutes: Minutes d'observation
-        predictions: Prédictions sur le test set
-        nb_y: Nombre de points Y
-        predictions_train: Prédictions sur le train set
-        prediction_type: Type de prédiction
-        extra_predictions: Prédictions supplémentaires
+        first_minutes: Période d'observation en minutes
+        predictions: Prédictions sur le set de test (flat)
+        nb_y: Nombre de points de prédiction
+        predictions_train: Prédictions sur le set de train (flat)
+        prediction_type: 'return', 'price', ou 'signal'
+        extra_predictions: Liste de prédictions supplémentaires
     
     Returns:
         Figure Plotly
@@ -75,11 +76,12 @@ def build_segments_graph(
     if len(days) == 0:
         return fig
     
-    # Série complète en fond
     try:
         fig.add_trace(go.Scatter(
-            x=idx, y=df['openPrice'].values,
-            mode='lines', name='Série',
+            x=idx,
+            y=df['openPrice'].values,
+            mode='lines',
+            name='Série',
             line={'color': '#888888', 'width': 1},
             opacity=0.35
         ))
@@ -104,11 +106,9 @@ def build_segments_graph(
         pos = np.where(day_mask)[0]
         if pos.size == 0:
             continue
-        
         obs_len = min(obs_len_steps, pos.size)
         obs_idx = pos[:obs_len]
         rest_idx = pos[obs_len:]
-        
         if d <= split_day:
             masks['train_obs'][obs_idx] = True
             if rest_idx.size > 0:
@@ -121,7 +121,10 @@ def build_segments_graph(
     def add_series(name, mask, color, width=2):
         y = np.where(mask, df['openPrice'].values, np.nan)
         fig.add_trace(go.Scatter(
-            x=idx, y=y, mode='lines', name=name,
+            x=idx,
+            y=y,
+            mode='lines',
+            name=name,
             line={'color': color, 'width': width}
         ))
     
@@ -130,7 +133,68 @@ def build_segments_graph(
     add_series('Test (premières min)', masks['test_obs'], '#9467bd', 2)
     add_series('Test (reste)', masks['test_rest'], '#d62728', 2)
 
-    # Reconstruction des prédictions
+    # Zone de couleur de fond pour le mode SIGNAL
+    if prediction_type == 'signal':
+        shapes = []
+        
+        def add_signal_shapes(preds, day_list):
+            if preds is None:
+                return
+            preds_arr = np.array(preds).flatten()
+            pred_idx = 0
+            
+            for day in day_list:
+                day_mask = (norm == day)
+                pos = np.where(day_mask)[0]
+                if pos.size == 0:
+                    continue
+                obs_len = min(obs_len_steps, pos.size)
+                if obs_len >= pos.size:
+                    continue
+                
+                rest_pos = pos[obs_len:]
+                if len(rest_pos) == 0:
+                    continue
+                
+                if pred_idx >= len(preds_arr):
+                    break
+                
+                signal_val = int(preds_arr[pred_idx])
+                pred_idx += 1
+                
+                # Mapping couleur
+                color = None
+                if signal_val == 0:
+                    color = 'rgba(255, 0, 0, 0.4)'
+                elif signal_val == 1:
+                    color = 'rgba(255, 100, 100, 0.2)'
+                elif signal_val == 3:
+                    color = 'rgba(100, 255, 100, 0.2)'
+                elif signal_val == 4:
+                    color = 'rgba(0, 255, 0, 0.4)'
+                
+                if color:
+                    x0 = idx[rest_pos[0]]
+                    x1 = idx[rest_pos[-1]]
+                    
+                    shapes.append(dict(
+                        type="rect",
+                        xref="x", yref="paper",
+                        x0=x0, y0=0, x1=x1, y1=1,
+                        fillcolor=color,
+                        opacity=0.5,
+                        layer="below",
+                        line_width=0,
+                    ))
+
+        train_days = days[:split_idx]
+        test_days = days[split_idx:]
+        
+        add_signal_shapes(predictions_train, train_days)
+        add_signal_shapes(predictions, test_days)
+        
+        fig.update_layout(shapes=shapes)
+
     def reconstruct_predictions(predictions_data, day_list, color_name, color_hex):
         if predictions_data is not None and len(predictions_data) > 0:
             try:
@@ -140,16 +204,14 @@ def build_segments_graph(
                 preds_flat = preds_array.flatten()
                 
                 pred_idx_in_flat = 0
-                for day in day_list:
+                for day_idx, day in enumerate(day_list):
                     day_mask = (norm == day)
                     pos = np.where(day_mask)[0]
                     if pos.size == 0:
                         continue
-                    
                     obs_len = min(obs_len_steps, pos.size)
                     if obs_len >= pos.size:
                         continue
-                    
                     rest_pos = pos[obs_len:]
                     if len(rest_pos) == 0:
                         continue
@@ -192,8 +254,10 @@ def build_segments_graph(
                 
                 if pred_values_flat:
                     fig.add_trace(go.Scatter(
-                        x=pred_idx_flat, y=pred_values_flat,
-                        mode='lines+markers', name=color_name,
+                        x=pred_idx_flat,
+                        y=pred_values_flat,
+                        mode='lines+markers',
+                        name=color_name,
                         line={'color': color_hex, 'width': 2},
                         marker={'size': 4}
                     ))
@@ -202,7 +266,6 @@ def build_segments_graph(
 
     train_days = days[:split_idx]
     test_days = days[split_idx:]
-    
     reconstruct_predictions(predictions_train, train_days, 'Prédiction (train)', '#17becf')
     reconstruct_predictions(predictions, test_days, 'Prédiction (test)', '#FF8C00')
     
@@ -218,17 +281,26 @@ def build_segments_graph(
 
 def build_generalization_figure(
     df: pd.DataFrame,
-    sample_days: List,
+    sample_days: list,
     obs_window: int,
     y_pred: np.ndarray,
     nb_y: int,
     prediction_type: str = 'return'
-) -> Tuple[go.Figure, float, float, int]:
+) -> tuple[go.Figure, float, float, int]:
     """
-    Construit un graphe pour visualiser la généralisation du modèle.
+    Construit un graphe pour visualiser la généralisation du modèle sur la courbe courante.
+    Affiche la série réelle + quelques points futurs réels vs prédits.
+    
+    Args:
+        df: DataFrame avec les données
+        sample_days: Liste des jours d'échantillons
+        obs_window: Fenêtre d'observation
+        y_pred: Prédictions du modèle
+        nb_y: Nombre de points de prédiction
+        prediction_type: 'return' ou 'price'
     
     Returns:
-        Tuple (figure, MAE, RMSE, nb_points)
+        (figure, MAE, RMSE, nb_points)
     """
     fig = go.Figure()
     fig.update_layout(
@@ -247,10 +319,13 @@ def build_generalization_figure(
     idx = df.index
     norm = idx.normalize()
 
+    # Trace de la série complète en fond
     try:
         fig.add_trace(go.Scatter(
-            x=idx, y=df['openPrice'].values,
-            mode='lines', name='Série (nouvelle)',
+            x=idx,
+            y=df['openPrice'].values,
+            mode='lines',
+            name='Série (nouvelle)',
             line={'color': '#FF8C00', 'width': 1.8},
             opacity=0.55
         ))
@@ -315,12 +390,16 @@ def build_generalization_figure(
     if not all_x:
         return fig, 0.0, 0.0, 0
 
+    x_sorted = all_x
     true_sorted = np.array(all_true)
     pred_sorted = np.array(all_pred)
 
+    # Courbe prédite
     fig.add_trace(go.Scatter(
-        x=all_x, y=pred_sorted,
-        mode='markers', name='Prix prédit (généralisation)',
+        x=x_sorted,
+        y=pred_sorted,
+        mode='markers',
+        name='Prix prédit (généralisation)',
         marker={'size': 5, 'color': '#00E0FF', 'symbol': 'diamond'}
     ))
 
@@ -330,98 +409,4 @@ def build_generalization_figure(
     n_points = int(len(errors))
 
     return fig, mae, rmse, n_points
-
-
-def build_training_history_figure(
-    losses: List[float],
-    val_losses: List[float],
-    accs: List[float],
-    val_accs: List[float]
-) -> go.Figure:
-    """
-    Construit le graphique de l'historique d'entraînement.
-    """
-    fig = go.Figure()
-    
-    if losses:
-        fig.add_trace(go.Scatter(
-            x=list(range(1, len(losses) + 1)), y=losses,
-            mode='lines+markers', name='Loss train',
-            line={'color': '#2ca02c', 'width': 2},
-            marker={'size': 6}, yaxis='y'
-        ))
-    
-    if val_losses:
-        fig.add_trace(go.Scatter(
-            x=list(range(1, len(val_losses) + 1)), y=val_losses,
-            mode='lines+markers', name='Loss val',
-            line={'color': '#d62728', 'width': 2},
-            marker={'size': 6}, yaxis='y'
-        ))
-    
-    if accs:
-        accs_pct = [a * 100 for a in accs]
-        fig.add_trace(go.Scatter(
-            x=list(range(1, len(accs_pct) + 1)), y=accs_pct,
-            mode='lines+markers', name='DA train %',
-            line={'color': '#1f77b4', 'width': 2, 'dash': 'dot'},
-            marker={'size': 6}, yaxis='y2'
-        ))
-    
-    if val_accs:
-        vaccs_pct = [a * 100 for a in val_accs]
-        fig.add_trace(go.Scatter(
-            x=list(range(1, len(vaccs_pct) + 1)), y=vaccs_pct,
-            mode='lines+markers', name='DA val %',
-            line={'color': '#ff7f0e', 'width': 2, 'dash': 'dot'},
-            marker={'size': 6}, yaxis='y2'
-        ))
-    
-    loss_info = ''
-    if losses or val_losses:
-        all_loss = [l for l in (losses + val_losses) if l is not None and l > 0]
-        if all_loss:
-            current_loss = float(all_loss[-1])
-            loss_info = f' (actuel: {current_loss:.2e})' if current_loss < 0.001 else f' (actuel: {current_loss:.6f})'
-    
-    fig.update_layout(
-        template='plotly_dark',
-        paper_bgcolor='#000000',
-        plot_bgcolor='#000000',
-        font={'color': '#FFFFFF'},
-        title=f'📊 Loss{loss_info} & DA',
-        height=300,
-        uirevision='play_hist',
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='center', x=0.5, font={'size': 10}),
-        margin=dict(t=60, b=40, l=60, r=60),
-        yaxis={'title': 'Loss', 'side': 'left', 'type': 'log'},
-        yaxis2={'title': 'DA %', 'overlaying': 'y', 'side': 'right', 'range': [0, 100], 'ticksuffix': '%'}
-    )
-    
-    return fig
-
-
-def build_trades_table(trades: List[Dict]) -> List[Dict]:
-    """
-    Construit les données pour un tableau de trades.
-    Retourne une liste de dictionnaires (données brutes, pas de HTML).
-    """
-    if not trades:
-        return []
-    
-    result = []
-    for i, t in enumerate(trades[-30:], 1):
-        result.append({
-            'index': i,
-            'direction': t.get('direction', 'LONG'),
-            'entry_date': t.get('entry_time', '-')[:10] if len(t.get('entry_time', '-')) >= 10 else '-',
-            'entry_hour': t.get('entry_time', '-')[11:16] if len(t.get('entry_time', '-')) >= 16 else '-',
-            'exit_hour': t.get('exit_time', '-')[11:16] if len(t.get('exit_time', '-')) >= 16 else '-',
-            'qty': t.get('qty', 0),
-            'entry_price': round(t.get('entry_price', 0), 4),
-            'exit_price': round(t.get('exit_price', 0), 4),
-            'pnl': round(t.get('pnl', 0), 2),
-        })
-    
-    return result
 

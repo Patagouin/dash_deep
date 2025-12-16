@@ -1,21 +1,27 @@
 # app.py
 import os
-# Charger la config TensorFlow (GPU, memory growth) le plus tôt possible
-try:
-    import web.tf_setup  # noqa: F401
-except Exception:
-    pass
+# IMPORTANT: Ne PAS initialiser TensorFlow dans le processus parent
+# car cela cause PyExceptionRegistry::Init() already called dans les workers spawn.
+# TensorFlow sera initialisé dans chaque worker spawn avec la bonne config CUDA.
+# try:
+#     import web.tf_setup  # noqa: F401
+# except Exception:
+#     pass
 import diskcache
 from flask_socketio import SocketIO
 import logging
-from dash import CeleryManager, DiskcacheManager, Dash
 from dash_extensions.enrich import DashProxy, MultiplexerTransform
 
 from Models.Shares import Shares
+from web.custom_diskcache_manager import SpawnDiskcacheManager
 
 # --- Background Callback Manager ---
+# Utiliser SpawnDiskcacheManager qui utilise 'spawn' au lieu de 'fork'
+# Cela permet d'utiliser CUDA dans les background callbacks sans avoir besoin de Celery/Redis
 cache = diskcache.Cache("./cache")
-background_callback_manager = DiskcacheManager(cache)
+background_callback_manager = SpawnDiskcacheManager(cache)
+logging.info("✅ DiskcacheManager avec 'spawn' activé pour support GPU dans les background callbacks")
+logging.info("   (Pas besoin de Celery/Redis)")
 
 # --- App Instantiation ---
 shM = Shares()

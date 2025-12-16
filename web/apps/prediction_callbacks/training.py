@@ -4,7 +4,7 @@ import dash
 import plotly.graph_objs as go
 from app import app, shM, socketio
 from Models import prediction_utils as pred_ut
-from tensorflow.keras.callbacks import Callback
+from Models.training import DashProgressCallback  # Callback centralisé (suppression de ~150 lignes dupliquées)
 import traceback
 import logging
 import json
@@ -227,162 +227,7 @@ def apply_saved_to_fields(look_back_v, stride_v, nb_y_v, nb_units_v, layers_v, l
         first_or_no_update(ffmul_v),
     )
 
-class DashProgressCallback(Callback):
-    def __init__(self, set_progress_func, total_epochs=None, stage='tuner', max_trials=None):
-        super().__init__()
-        self.set_progress = set_progress_func
-        self.trials_results = []
-        self.fig = go.Figure()
-        self.fig.update_layout(
-            title='Training and Validation Accuracy (Live)',
-            xaxis_title='Epoch',
-            yaxis_title='Accuracy',
-            template='plotly_dark'
-        )
-        self._train_da = []
-        self._val_da = []
-        self._train_loss = []
-        self._val_loss = []
-        self.total_epochs = total_epochs
-        self.stage = stage
-        self.max_trials = max_trials
-        self.current_epoch = 0
-
-    def set_stage(self, stage, total_epochs=None):
-        self.stage = stage
-        if total_epochs is not None:
-            self.total_epochs = total_epochs
-        # reset epoch buffers for new stage
-        self._train_da = []
-        self._val_da = []
-        self.current_epoch = 0
-        try:
-            socketio.emit('update_terminal', {'output': f"\n[TRAIN] Passage en phase: {('Tuning' if stage == 'tuner' else 'Entraînement final')}\n"}, broadcast=True)
-        except Exception:
-            pass
-
-    def on_train_begin(self, logs=None):
-        self._train_da = []
-        self._val_da = []
-        self._train_loss = []
-        self._val_loss = []
-        self.current_epoch = 0
-        # Progress à 0% dès le début
-        progress_children = html.Div([
-            html.Div("Démarrage de l'entraînement...", style={'marginBottom': '8px', 'color': '#4CAF50'}),
-            html.Div([
-                html.Div(style={'width': '0%', 'height': '10px', 'backgroundColor': '#4CAF50', 'transition': 'width 0.2s'}),
-            ], style={'width': '100%', 'height': '10px', 'backgroundColor': '#555', 'borderRadius': '4px', 'overflow': 'hidden'})
-        ])
-        # Utiliser une figure initiale en thème sombre
-        try:
-            dark_fig = go.Figure()
-            dark_fig.update_layout(template='plotly_dark')
-        except Exception:
-            dark_fig = go.Figure()
-        self.set_progress((progress_children, dark_fig))
-        try:
-            socketio.emit('update_terminal', {'output': "[TRAIN] Démarrage de l'entraînement...\n"}, broadcast=True)
-            socketio.emit('update_progress', {'progress': 0}, broadcast=True)
-        except Exception:
-            pass
-
-    def on_epoch_end(self, epoch, logs=None):
-        logs = logs or {}
-        train_da = logs.get('directional_accuracy') or logs.get('main_output_directional_accuracy')
-        val_da = logs.get('val_directional_accuracy') or logs.get('val_main_output_directional_accuracy')
-        train_loss = logs.get('loss')
-        val_loss = logs.get('val_loss')
-        if train_da is not None:
-            self._train_da.append(train_da)
-        if val_da is not None:
-            self._val_da.append(val_da)
-        if train_loss is not None:
-            self._train_loss.append(train_loss)
-        if val_loss is not None:
-            self._val_loss.append(val_loss)
-        self.current_epoch = epoch + 1
-
-        # Recréer la figure live
-        live_fig = go.Figure()
-        if self._train_da or self._val_da:
-            if self._train_da:
-                live_fig.add_trace(go.Scatter(x=list(range(1, len(self._train_da) + 1)), y=self._train_da, name='Training Accuracy'))
-            if self._val_da:
-                live_fig.add_trace(go.Scatter(x=list(range(1, len(self._val_da) + 1)), y=self._val_da, name='Validation Accuracy'))
-            live_fig.update_layout(title='Training and Validation Accuracy (Live)', template='plotly_dark')
-        elif self._train_loss or self._val_loss:
-            # Fallback sur les pertes si DA indisponible
-            if self._train_loss:
-                live_fig.add_trace(go.Scatter(x=list(range(1, len(self._train_loss) + 1)), y=self._train_loss, name='Training Loss'))
-            if self._val_loss:
-                live_fig.add_trace(go.Scatter(x=list(range(1, len(self._val_loss) + 1)), y=self._val_loss, name='Validation Loss'))
-            live_fig.update_layout(title='Training and Validation Loss (Live)', template='plotly_dark')
-
-        # Barre de progression
-        percent = 0
-        if self.total_epochs and self.total_epochs > 0:
-            percent = int((self.current_epoch / self.total_epochs) * 100)
-
-        stage_label = 'Tuning' if self.stage == 'tuner' else 'Entraînement final'
-        progress_children = html.Div([
-            html.Div(f"{stage_label}: epoch {self.current_epoch}/{self.total_epochs or '?'} — Train DA: {train_da}, Val DA: {val_da}", style={'marginBottom': '8px', 'color': '#4CAF50'}),
-            html.Div([
-                html.Div(style={'width': f'{percent}%', 'height': '10px', 'backgroundColor': '#4CAF50', 'transition': 'width 0.2s'}),
-            ], style={'width': '100%', 'height': '10px', 'backgroundColor': '#555', 'borderRadius': '4px', 'overflow': 'hidden'})
-        ])
-
-        self.set_progress((progress_children, live_fig))
-        try:
-            msg = f"[EPOCH {self.current_epoch}/{self.total_epochs or '?'}] train_DA={train_da} val_DA={val_da} loss={train_loss} val_loss={val_loss}\n"
-            socketio.emit('update_terminal', {'output': msg}, broadcast=True)
-            socketio.emit('update_progress', {'progress': percent}, broadcast=True)
-        except Exception:
-            pass
-
-    def on_trial_end(self, trial):
-        import pandas as pd
-        trial_data = {
-            'trial_id': trial.trial_id,
-            'hyperparameters': str(trial.hyperparameters.values),
-            'score': trial.score,
-            'status': trial.status
-        }
-        self.trials_results.append(trial_data)
-
-        results_df = pd.DataFrame(self.trials_results)
-        results_df.rename(columns={
-            'trial_id': 'Essai', 'hyperparameters': 'Hyperparamètres',
-            'score': 'Score', 'status': 'Statut'
-        }, inplace=True)
-
-        table = dash_table.DataTable(
-            columns=[{"name": i, "id": i} for i in results_df.columns],
-            data=results_df.to_dict('records'),
-            style_cell={'textAlign': 'left', 'whiteSpace': 'normal', 'height': 'auto'},
-            style_header={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white'},
-            style_data={'backgroundColor': 'rgb(50, 50, 50)', 'color': 'white'},
-        )
-
-        # Ajouter une barre de progression (estimation) si max_trials est connu
-        percent = 0
-        if getattr(self, 'max_trials', None):
-            num_done = len(self.trials_results)
-            percent = int((num_done / self.max_trials) * 100) if self.max_trials else 0
-
-        progress_children = html.Div([
-            html.Div(f'Recherche des hyperparamètres: {len(self.trials_results)}/{getattr(self, "max_trials", "?")}', style={'marginBottom': '8px', 'color': '#4CAF50'}),
-            html.Div([
-                html.Div(style={'width': f'{percent}%', 'height': '10px', 'backgroundColor': '#4CAF50', 'transition': 'width 0.2s'}),
-            ], style={'width': '100%', 'height': '10px', 'backgroundColor': '#555', 'borderRadius': '4px', 'overflow': 'hidden'}),
-            html.Div(table, style={'marginTop': '10px'})
-        ])
-
-        self.set_progress((progress_children, self.fig))
-        try:
-            socketio.emit('update_terminal', {'output': f"[TUNER] Fin essai {trial.trial_id} score={trial.score} statut={trial.status}\n"}, broadcast=True)
-        except Exception:
-            pass
+# DashProgressCallback importé depuis Models.training (suppression du code dupliqué)
 
 
 @app.callback(
@@ -762,7 +607,7 @@ def train_and_display_progress(set_progress, n_clicks, selected_symbols, trainin
             socketio.emit('update_terminal', {'output': f"[TRAIN] Lancement: {symbol} (jours={training_days}, split={train_test_ratio}%)\n[PARAMS] {json.dumps(params_dump)}\n"}, broadcast=True)
         except Exception:
             pass
-        dash_callback = DashProgressCallback(set_progress, total_epochs=hps['epochs'], stage='tuner', max_trials=hps['max_trials'])
+        dash_callback = DashProgressCallback(set_progress=set_progress, total_epochs=hps['epochs'], stage='tuner', max_trials=hps['max_trials'], socketio=socketio)
         logging.info("[TRAIN] Tuner: running search")
         try:
             dark_fig = go.Figure()

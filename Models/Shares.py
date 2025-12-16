@@ -314,6 +314,23 @@ class Shares:
 
         ut.logOperation(f"Shares: {shareObj.symbol} updated")
 
+    def disable_updates_for_share(self, shareObj, reason: str = ""):
+        """Désactive l'update d'une action (isUpdated=false) et journalise dans delisted.txt."""
+        self.__sqlObj.set_is_updated(shareObj, False)
+        try:
+            project_dir = os.path.dirname(os.path.dirname(__file__))
+            delisted_path = os.path.join(project_dir, "delisted.txt")
+            date_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(delisted_path, "a") as f:
+                if reason:
+                    f.write(f"{date_now} ; {shareObj.symbol} ; {reason}\n")
+                else:
+                    f.write(f"{date_now} ; {shareObj.symbol}\n")
+        except Exception:
+            # Si on ne peut pas écrire, on ne bloque pas le process
+            pass
+        ut.logOperation(f"Disable update: {shareObj.symbol} ({reason})")
+
     def updateSharesFromDataFrame(self, dfShare):
         for share in dfShare.itertuples():
             self.updateShare(share)
